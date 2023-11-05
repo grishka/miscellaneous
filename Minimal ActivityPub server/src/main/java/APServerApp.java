@@ -173,9 +173,7 @@ public class APServerApp{
 							<h2>Отправить активити</h2>
 							<form action="/send" method="post">
 								<textarea name="activityJson" cols="160" rows="20" required></textarea><br/>
-								<input type="submit" name="toFollowers" value="Разослать подписчикам"/><br/>
-								или<br/>
-								<input type="text" name="inbox" placeholder="Inbox URL"/> <input type="submit" name="toSpecificInbox" value="Отправить в конкретный инбокс"/>
+								<input type="text" name="inbox" placeholder="Inbox URL"/> <input type="submit" name="toSpecificInbox" value="Отправить"/>
 							</form>
 							<h2>Полученные активити</h2>
 					 """);
