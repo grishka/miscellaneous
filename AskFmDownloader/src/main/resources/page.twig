@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>{{ pageTitle }}</title>
+	{% if basePath is not empty %}<base href="{{ basePath }}"/>{% endif %}
+	<link rel="stylesheet" type="text/css" href="html/style.css"/>
+	{% block headExtras %}{% endblock %}
+</head>
+<body>
+	<div class="content">
+		{% block content %}{% endblock %}
+	</div>
+</body>
+</html>

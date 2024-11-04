@@ -1,0 +1,10 @@
+{# @pebvariable name="friends" type="me.grishka.askfmdl.model.User[]" #}
+{% extends "page" %}
+{% block content %}
+	<h1>{{ username }}'s friends</h1>
+	<ul>
+	{% for user in friends %}
+	    <li><a href="html/answers/{{ user.uid }}/0000.html">{{ user.fullName }} ({{ user.uid }})</a></li>
+	{% endfor %}
+	</ul>
+{% endblock %}

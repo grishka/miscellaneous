@@ -1,0 +1,29 @@
+{# @pebvariable name="questions" type="me.grishka.askfmdl.model.Question[]" #}
+{% extends "page" %}
+{% block content %}
+    <div>
+    	<img src="{{ userAvatar | default('images/noAvatar.png') }}" width="200" height="200" class="profileAva"/>
+    	<h1>{{ userDisplayName }}</h1>
+    	<h3>@{{ username }}</h3>
+    </div>
+    <div style="clear: both"></div>
+    {% for question in questions %}
+    <h4>{{ question.body | nl2br }}</h4>
+    {{ question.answer.body | default("") | nl2br }}
+    <div class="questionInfo">
+    	<span class="gray">{{ question.formattedDate }}</span>
+    	{{ question.type.displayString }}
+    	{% if question.author is not empty %}from <a href="html/answers/{{ question.author }}/0000.html">{{ question.authorName }}</a>{% endif %}
+    </div>
+    <hr/>
+    {% endfor %}
+    {% if totalPages>1 %}
+		{% for page in range(1, totalPages) %}
+			{% if thisPage==page %}
+				{{ page }}
+			{% else %}
+				<a href="html/answers/{{ username }}/{{ (page-1) | numberformat('0000') }}.html">{{ page }}</a>
+			{% endif %}
+		{% endfor %}
+    {% endif %}
+{% endblock %}
