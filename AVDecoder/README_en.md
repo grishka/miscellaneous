@@ -22,6 +22,7 @@ This uses an AD9226 ADC board I bought on AliExpress for 1400₽ or about $18, c
 There's a lot of information online about *generating* video signals, but surprisingly little about *decoding* one. So I feel obliged to document it since it took me an embarrassing amount of trial and error to figure this out.
 
 First of all, here's what an analog video signal looks like ([source](https://www.batsocks.co.uk/readme/video_timing.htm)) so you have an idea about the following explanations:
+
 ![](images/Timing_PAL_FrameSignal.gif)
 
 The Mac app reads the digitized signal from the RPi in those same 512K chunks that are being read by it from the ADC. 8-bit samples are converted to `float`s of 0.0 - 1.0.
@@ -45,13 +46,17 @@ A FIR filter is used to separate the subcarrier. I don't remember the exact para
 SECAM uses frequency modulation to encode color. Googling "frequency demodulation in software without I/Q" yields *all kinds* of mathematical formulas and convoluted algorithms like PLL. I decided that I don't want any of that. The most straightforward method of determining the frequency of a sine wave seems to be to count the samples between its zero crossings, so this is what I do. To achieve sub-sample precision, I do linear interpolation in reverse (given the values and X coordinates of two points, find the coordinate where the value of 0 would be between them) to end up with the inverse of the instantaneous frequency. This is then linearly interpolated between zero crossings. This works surprisingly well.
 
 A de-emphasis filter is then applied to the resulting signal to undo the distortions near sharp color transitions introduced by the encoding process:
+
 ![](images/deemphasis.png)
+
 (obtained by tweaking the parameters until the output looked right, there's no information whatsoever about the parameters of this)
 
 #### Luminance low-pass filtering
 
 Some parts of the next steps operate on a copy of the luminance signal passed through this filter, to reduce the effect of noise:
+
 ![](images/lowpass.png)
+
 The three signals (luminance, chrominance, filtered luminance) are always passed around together as a sort of three-channel signal for the rest of the decoding process.
 
 #### Level detection
@@ -99,7 +104,9 @@ Next steps are done on lines.
 #### Color synchronization
 
 SECAM encodes color as two components, Db and Dr, on alternating lines. A decoder needs to know which line contains which. To help it, lines 7-15 and 320-328 contain these signals:
+
 ![](images/color_sync.jpg)
+
 Some samples are averaged from the beginning and the end of the chrominance signal of each of these lines. If the beginning is within 3.5 - 4.5 MHz, and the end is more than 270 kHz away form that, the sign of that difference is used to set a flag whether the current line is a red or blue one.
 
 #### Chrominance normalization
@@ -137,6 +144,7 @@ GPIO 14 -> D7
 GPIO 15 -> D8
 ```
 I only use 8 bits out of 12 and skip the least-significant bit because it's noise anyway.
+
 ![](images/rpi_smi_pinout.png)
 
 Flash a Debian Bookworm image to the SD card. Add this to `boot.txt` to enable the USB gadget mode:
@@ -164,4 +172,5 @@ The UI is pretty self-explanatory. If you're seeing a distorted picture, adjust 
 ## What happens if you put a PAL signal into it?
 
 Here's PAL Durov to satisfy your curiosity:
+
 ![](images/PAL.jpg)
