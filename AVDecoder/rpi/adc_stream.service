@@ -1,0 +1,11 @@
+[Unit]
+Description=SMI ADC streaming
+After=usb_gadget.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/adc_stream
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

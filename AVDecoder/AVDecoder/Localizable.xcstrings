@@ -1,0 +1,46 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Nothing is being recorded" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ничего не записывается"
+          }
+        }
+      }
+    },
+    "Recording signal" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запись сигнала"
+          }
+        }
+      }
+    },
+    "Recording video" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запись видео"
+          }
+        }
+      }
+    },
+    "Signal source error" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ошибка источника сигнала"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
