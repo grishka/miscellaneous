@@ -37,6 +37,24 @@
         }
       }
     },
+    "1Jo-1f-hoa.title" : {
+      "comment" : "Class = \"NSButtonCell\"; title = \"Record VBI\"; ObjectID = \"1Jo-1f-hoa\";",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Record VBI"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Начать запись VBI"
+          }
+        }
+      }
+    },
     "1tx-W0-xDw.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"Lower\"; ObjectID = \"1tx-W0-xDw\";",
       "extractionState" : "extracted_with_value",

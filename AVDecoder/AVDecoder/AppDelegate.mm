@@ -40,6 +40,7 @@
 	NSThread* recordingThread;
 	tgvoip::BlockingQueue<tgvoip::Buffer>* flacEncoderBufferQueue;
 	tgvoip::BufferPool<BUFFER_SIZE, 10> flacEncoderBufferPool;
+	FILE *vbiRecordingFile;
 	
 	id<NSObject> activityToken;
 	dispatch_queue_t sampleCallbackQueue;
@@ -65,6 +66,7 @@
 @property (strong) IBOutlet NSButton *stopSourceButton;
 
 @property (strong) IBOutlet NSButton *startFlacRecordingButton;
+@property (strong) IBOutlet NSButton *startVbiRecordingButton;
 @property (strong) IBOutlet NSButton *startVideoRecordingButton;
 @property (strong) IBOutlet NSButton *stopFlacRecordingButton;
 @property (strong) IBOutlet NSButton *includeBlankingIntervalsCheckbox;
@@ -311,7 +313,8 @@ void runLoopCallback(void *info){
 	_stopSourceButton.enabled=true;
 	_startFlacRecordingButton.enabled=true;
 	_startVideoRecordingButton.enabled=true;
-	
+	_startVbiRecordingButton.enabled=true;
+
 	activityToken=[NSProcessInfo.processInfo beginActivityWithOptions: NSActivityIdleSystemSleepDisabled | NSActivityUserInitiated reason:@"Video capture"];
 }
 
@@ -383,6 +386,8 @@ void runLoopCallback(void *info){
 - (void)resetUiAfterRecording{
 	_startFlacRecordingButton.enabled=true;
 	_startVideoRecordingButton.enabled=true;
+	_startVbiRecordingButton.enabled=true;
+	_stopFlacRecordingButton.enabled=false;
 	_recordingStatusText.stringValue=NSLocalizedString(@"Nothing is being recorded", @"");
 	_recordingTimeText.stringValue=@"";
 	[recordingTimeUpdateTimer invalidate];
@@ -394,6 +399,7 @@ void runLoopCallback(void *info){
 	_stopSourceButton.enabled=false;
 	_startFlacRecordingButton.enabled=false;
 	_startVideoRecordingButton.enabled=false;
+	_startVbiRecordingButton.enabled=false;
 	source->stop();
 	delete source;
 	source=NULL;
@@ -484,17 +490,38 @@ void runLoopCallback(void *info){
 	[recordingThread start];
 	_startFlacRecordingButton.enabled=false;
 	_startVideoRecordingButton.enabled=false;
+	_startVbiRecordingButton.enabled=false;
 	_stopFlacRecordingButton.enabled=true;
 	_recordingStatusText.stringValue=NSLocalizedString(@"Recording signal", @"");
+	[self startRecordingTimer];
 }
 
 - (IBAction)stopRecording:(id)sender{
 	_stopFlacRecordingButton.enabled=false;
 	if(recordingFlac){
 		recordingFlac=false;
+	}else if(vbiRecordingFile){
+		decoder->vbiDataCallback=NULL;
+		fclose(vbiRecordingFile);
+		vbiRecordingFile=NULL;
+		[self resetUiAfterRecording];
 	}else{
 		decoder->stopOutput();
 	}
+}
+
+- (IBAction)startRecordingVBI:(id)sender{
+	_startFlacRecordingButton.enabled=false;
+	_startVideoRecordingButton.enabled=false;
+	_startVbiRecordingButton.enabled=false;
+	_stopFlacRecordingButton.enabled=true;
+	_recordingStatusText.stringValue=NSLocalizedString(@"Recording VBI", @"");
+	[self startRecordingTimer];
+	FILE *output=fopen([[self filePathForRecordingWithExtension:@"vbi"] cStringUsingEncoding:NSUTF8StringEncoding], "wb");
+	vbiRecordingFile=output;
+	decoder->vbiDataCallback=[output](uint8_t *data, size_t length){
+		fwrite(data, 1, length, output);
+	};
 }
 
 - (IBAction)changeAudioDevice:(id)sender{

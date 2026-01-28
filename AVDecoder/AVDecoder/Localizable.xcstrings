@@ -21,6 +21,16 @@
         }
       }
     },
+    "Recording VBI" : {
+      "localizations" : {
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запись VBI"
+          }
+        }
+      }
+    },
     "Recording video" : {
       "localizations" : {
         "ru" : {

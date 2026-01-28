@@ -122,7 +122,8 @@ void Decoder::runDecoderThread(){
 	float *prevChrominance=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	float *nextLuminance=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	float *nextChrominance=(float*)calloc(BUFFER_SIZE, sizeof(float));
-	
+	float *raw=(float*)calloc(BUFFER_SIZE, sizeof(float));
+
 	float *luminanceForSync=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	float *nextLuminanceForSync=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	
@@ -163,6 +164,8 @@ void Decoder::runDecoderThread(){
 		tmp=nextLuminanceForSync;
 		nextLuminanceForSync=luminanceForSync;
 		luminanceForSync=tmp;
+		
+		memcpy(raw, samples+filterDelay, BUFFER_SIZE*sizeof(float));
 		
 		memcpy(samples, samples+BUFFER_SIZE, filterSize*sizeof(float));
 		for(int i=0;i<BUFFER_SIZE;i++){
@@ -302,20 +305,23 @@ void Decoder::runDecoderThread(){
 					fieldDuration-=DEFAULT_LINE_DURATION/2;
 				//printf("long pulse: %d samples (%f / %d lines) location %d last %d, %s field, add %d samples\n", fieldDuration, fieldDuration/(float)DEFAULT_LINE_DURATION, (int)roundf(fieldDuration/(float)DEFAULT_LINE_DURATION), loc, lastLongSyncPulseLocation, nextFieldIsBottom ? "bottom" : "top", lastLongSyncPulseLocation+fieldDuration);
 				
-				vector<float> nextFieldLuminance, nextFieldChrominance, nextFieldLuminanceForSync;
+				vector<float> nextFieldLuminance, nextFieldChrominance, nextFieldLuminanceForSync, nextFieldRaw;
 				if(lastLongSyncPulseLocation+fieldDuration<0){
 					int samplesToMove=-(lastLongSyncPulseLocation+fieldDuration);
 					//printf("moving %d samples\n", samplesToMove);
 					nextFieldLuminance=vector<float>(currentFieldLuminance.end()-samplesToMove, currentFieldLuminance.end());
 					nextFieldChrominance=vector<float>(currentFieldChrominance.end()-samplesToMove, currentFieldChrominance.end());
 					nextFieldLuminanceForSync=vector<float>(currentFieldLuminanceForSync.end()-samplesToMove, currentFieldLuminanceForSync.end());
+					nextFieldRaw=vector<float>(currentFieldRaw.end()-samplesToMove, currentFieldRaw.end());
 					currentFieldLuminance.erase(currentFieldLuminance.end()-samplesToMove, currentFieldLuminance.end());
 					currentFieldChrominance.erase(currentFieldChrominance.end()-samplesToMove, currentFieldChrominance.end());
 					currentFieldLuminanceForSync.erase(currentFieldLuminanceForSync.end()-samplesToMove, currentFieldLuminanceForSync.end());
+					currentFieldRaw.erase(currentFieldRaw.end()-samplesToMove, currentFieldRaw.end());
 				}else{
 					currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+std::max(0, lastLongSyncPulseLocation), luminance+lastLongSyncPulseLocation+fieldDuration);
 					currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+std::max(0, lastLongSyncPulseLocation), chrominance+lastLongSyncPulseLocation+fieldDuration);
 					currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+std::max(0, lastLongSyncPulseLocation), luminanceForSync+lastLongSyncPulseLocation+fieldDuration);
+					currentFieldRaw.insert(currentFieldRaw.end(), raw+std::max(0, lastLongSyncPulseLocation), raw+lastLongSyncPulseLocation+fieldDuration);
 				}
 				assert(currentFieldLuminance.size()==fieldDuration);
 				for(int j=10;j<i;j++){
@@ -326,6 +332,7 @@ void Decoder::runDecoderThread(){
 				currentFieldLuminance=nextFieldLuminance;
 				currentFieldChrominance=nextFieldChrominance;
 				currentFieldLuminanceForSync=nextFieldLuminanceForSync;
+				currentFieldRaw=nextFieldRaw;
 				currentFieldSyncPulses.clear();
 				
 				nextFieldIsBottom=nextIsBottom;
@@ -347,6 +354,7 @@ void Decoder::runDecoderThread(){
 			currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+std::max(0, lastLongSyncPulseLocation), luminance+lastLongSyncPulseLocation+nextFieldDuration);
 			currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+std::max(0, lastLongSyncPulseLocation), chrominance+lastLongSyncPulseLocation+nextFieldDuration);
 			currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+std::max(0, lastLongSyncPulseLocation), luminanceForSync+lastLongSyncPulseLocation+nextFieldDuration);
+			currentFieldRaw.insert(currentFieldRaw.end(), raw+std::max(0, lastLongSyncPulseLocation), raw+lastLongSyncPulseLocation+nextFieldDuration);
 			assert(currentFieldLuminance.size()==nextFieldDuration);
 			for(int j=10;j<syncPulseLocations.size();j++){
 				if(syncPulseLocations[j].location>=std::min(BUFFER_SIZE, lastLongSyncPulseLocation+nextFieldDuration))
@@ -358,6 +366,7 @@ void Decoder::runDecoderThread(){
 			currentFieldLuminance.clear();
 			currentFieldChrominance.clear();
 			currentFieldLuminanceForSync.clear();
+			currentFieldRaw.clear();
 			currentFieldSyncPulses.clear();
 
 			lastLongSyncPulseLocation+=nextFieldDuration;
@@ -374,6 +383,7 @@ void Decoder::runDecoderThread(){
 			currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+(BUFFER_SIZE-unprocessedSamplesRemain), luminance+BUFFER_SIZE);
 			currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+(BUFFER_SIZE-unprocessedSamplesRemain), chrominance+BUFFER_SIZE);
 			currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+(BUFFER_SIZE-unprocessedSamplesRemain), luminanceForSync+BUFFER_SIZE);
+			currentFieldRaw.insert(currentFieldRaw.end(), raw+(BUFFER_SIZE-unprocessedSamplesRemain), raw+BUFFER_SIZE);
 			for(int j=10;j<syncPulseLocations.size();j++){
 				if(syncPulseLocations[j].location>=BUFFER_SIZE)
 					break;
@@ -441,7 +451,7 @@ std::vector<Decoder::VideoLine> Decoder::splitLine(VideoLine line, int numParts)
 			.luminance=vector<float>(line.luminance.begin()+offset, line.luminance.begin()+offset+length),
 			.chrominance=vector<float>(line.chrominance.begin()+offset, line.chrominance.begin()+offset+length),
 			.filteredLuminance=vector<float>(line.filteredLuminance.begin()+offset, line.filteredLuminance.begin()+offset+length),
-			.raw=vector<float>(), // TODO
+			.raw=vector<float>(line.raw.begin()+offset, line.raw.begin()+offset+length),
 			.sync=sync,
 		};
 		parts.push_back(part);
@@ -495,6 +505,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 		currentLine.luminance.push_back(luminance[i]);
 		currentLine.chrominance.push_back(chrominance[i]);
 		currentLine.filteredLuminance.push_back(filteredLuminance[i]);
+		currentLine.raw.push_back(raw[i]);
 		if(i==nextSyncPulse.location){
 			if(nextSyncPulse.location>=nextLineStartEarliestLocation){
 				lines.push_back(currentLine);
@@ -605,6 +616,19 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 				processLine(field.lines[j], lineIndex, field.syncLevel, field.blackLevel, whiteLevel);
 			}
 		}
+		if(vbiDataCallback && field.lines.size()>32){
+			uint8_t vbiData[DEFAULT_LINE_DURATION*16];
+			int offset=0;
+			for(int i=0;i<16;i++){
+				VideoLine line=field.lines[(field.isBottom ? 14 : 13)+i];
+				int lineLength=std::min((int)line.raw.size(), DEFAULT_LINE_DURATION);
+				for(int j=0;j<lineLength;j++){
+					vbiData[offset+j]=(uint8_t)roundf(std::clamp((line.raw[j]-blackLevel)/(whiteLevel-blackLevel)*0.8f+0.2f, 0.0f, 1.0f)*255.0f);
+				}
+				offset+=DEFAULT_LINE_DURATION;
+			}
+			vbiDataCallback(vbiData, DEFAULT_LINE_DURATION*16);
+		}
 		if(field.isBottom && outputEnabled){
 			outputCapturedFrame();
 		}
@@ -714,6 +738,12 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 		float sample2C=line.chrominance[(int)sampleIndex+1];
 		interpolatedChrominance[x]=sample2C*k+sample1C*(1.0f-k);
 	}
+	
+	if(colorMode==ColorDisplayMode::Raw && line.raw.size()<DEFAULT_LINE_DURATION){
+		for(int i=0;i<DEFAULT_LINE_DURATION-line.raw.size();i++){
+			line.raw.push_back(0);
+		}
+	}
 
 	if(lineIndex==scopeLineIndex){
 		scopeData1.clear();
@@ -736,7 +766,7 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 			_samplesForDisplay=&interpolatedLuminance;
 			break;
 		case ColorDisplayMode::Raw:
-			_samplesForDisplay=&interpolatedLuminance;
+			_samplesForDisplay=&line.raw;
 			break;
 		case ColorDisplayMode::Y:
 			_samplesForDisplay=&interpolatedLuminance;

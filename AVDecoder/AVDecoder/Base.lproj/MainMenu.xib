@@ -29,6 +29,7 @@
                 <outlet property="signalOffsetSlider" destination="0xk-lP-1Ko" id="LbO-4x-5pn"/>
                 <outlet property="startAdcButton" destination="Vph-CO-qfU" id="Jks-rK-9qh"/>
                 <outlet property="startFlacRecordingButton" destination="Ffm-6F-S8f" id="gFR-tT-kjt"/>
+                <outlet property="startVbiRecordingButton" destination="7u8-vc-hH9" id="qKb-cM-TOM"/>
                 <outlet property="startVideoRecordingButton" destination="BMu-lD-8ZA" id="MvK-XA-CxL"/>
                 <outlet property="stopFlacRecordingButton" destination="95M-S3-B9u" id="eoc-ut-Zgf"/>
                 <outlet property="stopSourceButton" destination="SVQ-QB-DDz" id="F0E-r8-0I2"/>
@@ -723,10 +724,10 @@
                         </constraints>
                     </customView>
                     <stackView distribution="fill" orientation="vertical" alignment="leading" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="vdU-PS-UFm">
-                        <rect key="frame" x="952" y="77" width="250" height="639"/>
+                        <rect key="frame" x="952" y="49" width="250" height="667"/>
                         <subviews>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="ebs-Q1-Wj5">
-                                <rect key="frame" x="-2" y="623" width="92" height="16"/>
+                                <rect key="frame" x="-2" y="651" width="92" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="Signal source" id="YaS-fP-zBl">
                                     <font key="font" textStyle="headline" name=".SFNS-Bold"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -734,7 +735,7 @@
                                 </textFieldCell>
                             </textField>
                             <stackView distribution="fillEqually" orientation="horizontal" alignment="top" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bWj-pG-Dgw">
-                                <rect key="frame" x="0.0" y="595" width="250" height="20"/>
+                                <rect key="frame" x="0.0" y="623" width="250" height="20"/>
                                 <subviews>
                                     <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Vph-CO-qfU">
                                         <rect key="frame" x="-7" y="-7" width="135" height="32"/>
@@ -767,7 +768,7 @@
                                 </customSpacing>
                             </stackView>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="SVQ-QB-DDz">
-                                <rect key="frame" x="-7" y="560" width="264" height="32"/>
+                                <rect key="frame" x="-7" y="588" width="264" height="32"/>
                                 <buttonCell key="cell" type="push" title="Stop" bezelStyle="rounded" alignment="center" enabled="NO" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="A8f-MM-MAh">
                                     <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                     <font key="font" metaFont="system"/>
@@ -777,7 +778,7 @@
                                 </connections>
                             </button>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="TzN-WC-HfV">
-                                <rect key="frame" x="-2" y="543" width="75" height="16"/>
+                                <rect key="frame" x="-2" y="571" width="75" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="White level:" id="blq-It-3DC">
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -785,7 +786,7 @@
                                 </textFieldCell>
                             </textField>
                             <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="KC4-Xj-IEA">
-                                <rect key="frame" x="-2" y="509" width="254" height="28"/>
+                                <rect key="frame" x="-2" y="537" width="254" height="28"/>
                                 <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="100" tickMarkPosition="above" numberOfTickMarks="5" sliderType="linear" id="WHU-P7-rO2">
                                     <font key="font" size="12" name="Helvetica"/>
                                 </sliderCell>
@@ -794,7 +795,7 @@
                                 </connections>
                             </slider>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="LSn-qv-wAO">
-                                <rect key="frame" x="-2" y="491" width="84" height="16"/>
+                                <rect key="frame" x="-2" y="519" width="84" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="Signal offset:" id="yc1-ux-tMT">
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -802,7 +803,7 @@
                                 </textFieldCell>
                             </textField>
                             <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="0xk-lP-1Ko">
-                                <rect key="frame" x="-2" y="457" width="254" height="28"/>
+                                <rect key="frame" x="-2" y="485" width="254" height="28"/>
                                 <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="255" doubleValue="15" tickMarkPosition="above" numberOfTickMarks="5" sliderType="linear" id="qCf-jM-ESX">
                                     <font key="font" size="12" name="Helvetica"/>
                                 </sliderCell>
@@ -811,10 +812,10 @@
                                 </connections>
                             </slider>
                             <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="hmn-1i-ymT">
-                                <rect key="frame" x="0.0" y="452" width="250" height="5"/>
+                                <rect key="frame" x="0.0" y="480" width="250" height="5"/>
                             </box>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="daA-X2-Kwk">
-                                <rect key="frame" x="-2" y="430" width="112" height="16"/>
+                                <rect key="frame" x="-2" y="458" width="112" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="Preview settings" id="bmI-jU-180">
                                     <font key="font" textStyle="headline" name=".SFNS-Bold"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -822,7 +823,7 @@
                                 </textFieldCell>
                             </textField>
                             <segmentedControl verticalHuggingPriority="750" horizontalCompressionResistancePriority="1" translatesAutoresizingMaskIntoConstraints="NO" id="riz-W8-6DK">
-                                <rect key="frame" x="-2" y="399" width="254" height="24"/>
+                                <rect key="frame" x="-2" y="427" width="254" height="24"/>
                                 <segmentedCell key="cell" borderStyle="border" alignment="left" style="rounded" trackingMode="selectOne" id="zPF-gj-kSC">
                                     <font key="font" metaFont="system"/>
                                     <segments>
@@ -838,7 +839,7 @@
                                 </connections>
                             </segmentedControl>
                             <segmentedControl verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="zf2-Uf-Ibb">
-                                <rect key="frame" x="-2" y="369" width="254" height="24"/>
+                                <rect key="frame" x="-2" y="397" width="254" height="24"/>
                                 <segmentedCell key="cell" borderStyle="border" alignment="left" style="rounded" trackingMode="selectOne" id="otA-bn-LPB">
                                     <font key="font" metaFont="system"/>
                                     <segments>
@@ -852,7 +853,7 @@
                                 </connections>
                             </segmentedControl>
                             <segmentedControl verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="IOs-qC-2X4">
-                                <rect key="frame" x="-2" y="339" width="254" height="24"/>
+                                <rect key="frame" x="-2" y="367" width="254" height="24"/>
                                 <segmentedCell key="cell" borderStyle="border" alignment="left" style="rounded" trackingMode="selectOne" id="vFv-pl-dK7">
                                     <font key="font" metaFont="system"/>
                                     <segments>
@@ -865,10 +866,10 @@
                                 </connections>
                             </segmentedControl>
                             <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="uRS-WY-fkg">
-                                <rect key="frame" x="0.0" y="329" width="250" height="5"/>
+                                <rect key="frame" x="0.0" y="357" width="250" height="5"/>
                             </box>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="R3v-od-eoD">
-                                <rect key="frame" x="-2" y="307" width="70" height="16"/>
+                                <rect key="frame" x="-2" y="335" width="70" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="Recording" id="VrI-KF-2c2">
                                     <font key="font" textStyle="headline" name=".SFNS-Bold"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -876,13 +877,23 @@
                                 </textFieldCell>
                             </textField>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Ffm-6F-S8f">
-                                <rect key="frame" x="-7" y="272" width="264" height="32"/>
+                                <rect key="frame" x="-7" y="300" width="264" height="32"/>
                                 <buttonCell key="cell" type="push" title="Record raw signal" bezelStyle="rounded" alignment="center" enabled="NO" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="RQC-8p-aBE">
                                     <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                     <font key="font" metaFont="system"/>
                                 </buttonCell>
                                 <connections>
                                     <action selector="startRecordingFlac:" target="Voe-Tx-rLC" id="SKU-yi-E7g"/>
+                                </connections>
+                            </button>
+                            <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="7u8-vc-hH9">
+                                <rect key="frame" x="-7" y="272" width="264" height="32"/>
+                                <buttonCell key="cell" type="push" title="Record VBI" bezelStyle="rounded" alignment="center" enabled="NO" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1Jo-1f-hoa">
+                                    <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="startRecordingVBI:" target="Voe-Tx-rLC" id="iPf-8Z-NKl"/>
                                 </connections>
                             </button>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="BMu-lD-8ZA">
@@ -1073,9 +1084,11 @@
                             <constraint firstAttribute="trailing" secondItem="ReX-vm-NJv" secondAttribute="trailing" id="S9T-Fi-dsq"/>
                             <constraint firstItem="bWj-pG-Dgw" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="TLe-IG-zCZ"/>
                             <constraint firstItem="95M-S3-B9u" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="Tz2-Z7-j2T"/>
+                            <constraint firstItem="7u8-vc-hH9" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="XZ6-y8-lBW"/>
                             <constraint firstAttribute="trailing" secondItem="QYH-El-CR3" secondAttribute="trailing" id="ZnG-Le-jpN"/>
                             <constraint firstItem="KC4-Xj-IEA" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="ck2-Cx-OaF"/>
                             <constraint firstItem="0xk-lP-1Ko" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="cwt-wB-WO4"/>
+                            <constraint firstAttribute="trailing" secondItem="7u8-vc-hH9" secondAttribute="trailing" id="dcD-5Q-hVn"/>
                             <constraint firstItem="uRS-WY-fkg" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="eD6-M8-ptd"/>
                             <constraint firstItem="ReX-vm-NJv" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="eb1-bW-0VS"/>
                             <constraint firstItem="SVQ-QB-DDz" firstAttribute="leading" secondItem="vdU-PS-UFm" secondAttribute="leading" id="hbu-cR-IEg"/>
@@ -1116,8 +1129,10 @@
                             <integer value="1000"/>
                             <integer value="1000"/>
                             <integer value="1000"/>
+                            <integer value="1000"/>
                         </visibilityPriorities>
                         <customSpacing>
+                            <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>

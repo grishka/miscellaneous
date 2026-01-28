@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <vector>
 #include <deque>
+#include <functional>
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "Buffers.h"
@@ -53,6 +54,7 @@ public:
 	bool outputEnabled=false;
 	int scopeLineIndex=16;
 	float whiteLevelRatio=0.43; // ratio between sync to black and black to white
+	std::function<void(uint8_t*, size_t)> vbiDataCallback;
 private:
 	struct SyncPulse{
 		int location;
