@@ -6,6 +6,7 @@ import java.io.File;
 
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 import me.grishka.gbemulator.display.GUIScreenBitmapHolder;
@@ -60,7 +61,7 @@ public class GBEmulatorApp{
 			}
 		});
 		window.setVisible(true);
-		chooseFileAndStart();
+		SwingUtilities.invokeLater(GBEmulatorApp::chooseFileAndStart);
 	}
 
 	private static InputDevice.Button mapKey(KeyEvent ev){
@@ -81,7 +82,8 @@ public class GBEmulatorApp{
 
 	private static void chooseFileAndStart(){
 		stop();
-		JFileChooser chooser=new JFileChooser(new File("ROMs"));
+		File dir=new File("ROMs");
+		JFileChooser chooser=new JFileChooser(dir.exists() ? dir : null);
 		chooser.setDialogTitle("Open ROM");
 		chooser.setFileFilter(new FileNameExtensionFilter("GameBoy ROM file", "gb", "gbc"));
 		if(chooser.showOpenDialog(window)!=JFileChooser.APPROVE_OPTION)
