@@ -687,46 +687,56 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 	}
 	chromaLowpassFilter->process(line.chrominance.data(), line.chrominance.data(), (int)line.chrominance.size());
 
-	float offset=0;
-	float endOffset=0;
-	int leftAlign;
-	int rightAlign;
+	// Precisely align lines relative to each other by offsetting and interpolating them such that the edges of the sync pulses either end of the line
+	// end up at exact known X coordinates in the framebuffer
+	float leadingOffset=0;
+	float trailingOffset=0;
+	float leadingAlign;
+	float trailingAlign;
+	float leadingThreshold=syncLevel+(blackLevel-syncLevel)*0.2f;
+	float trailingThreshold=syncLevel+(blackLevel-syncLevel)*0.7f;
+	int leadingAlignDest, trailingAlignDest;
 	if((lineIndex>4 && lineIndex<310) || (lineIndex>317 && lineIndex<623)){
-		leftAlign=LINE_LONG_SYNC_DURATION-LINE_SYNC_WINDOW+15;
-		rightAlign=LINE_SYNC_WINDOW-15;
+		// These lines contain field sync pulses, which are shorter than normal line sync
+		leadingAlignDest=LINE_LONG_SYNC_DURATION-LINE_SYNC_WINDOW+15;
+		leadingAlign=numSamples*(leadingAlignDest/(float)DEFAULT_LINE_DURATION);
 	}else{
-		leftAlign=LINE_SYNC_DURATION-LINE_SYNC_WINDOW+15;
-		rightAlign=LINE_SYNC_WINDOW-15;
+		leadingAlignDest=LINE_SYNC_DURATION-LINE_SYNC_WINDOW+15;
+		leadingAlign=numSamples*(leadingAlignDest/(float)DEFAULT_LINE_DURATION);
 	}
-	float threshold=syncLevel+(blackLevel-syncLevel)*0.7f;
-	if(line.filteredLuminance[0]<threshold){
-		for(int i=leftAlign-15;i<leftAlign+15;i++){
-			if(line.filteredLuminance[i]>threshold && line.filteredLuminance[i+1]>threshold && line.filteredLuminance[i+2]>threshold){
-				float prevSample=line.filteredLuminance[i-1];
-				offset=i-leftAlign+(threshold-prevSample)/(line.filteredLuminance[i]-prevSample);
-				break;
-			}
-		}
-		int size=(int)line.luminance.size();
-		for(int i=2;i<100;i++){
-			if(line.filteredLuminance[size-i]>threshold && line.filteredLuminance[size-(i+1)]>threshold && line.filteredLuminance[size-(i+2)]>threshold){
-				float prevSample=line.filteredLuminance[size-(i-1)];
-				float curSample=line.filteredLuminance[size-i];
-				if(prevSample==curSample) // TODO
-					continue;
-				endOffset=rightAlign-i+(threshold-curSample)/(prevSample-curSample);
-				break;
-			}
+	trailingAlignDest=DEFAULT_LINE_DURATION-12;
+	trailingAlign=numSamples*(trailingAlignDest/(float)DEFAULT_LINE_DURATION);
+	
+	// Find the rising edge of the leading sync pulse, going right to left
+	//      _______
+	// ____/ <----
+	for(int i=leadingAlign+15;i>std::max(1, (int)leadingAlign-30);i--){
+		float prevSample=line.luminance[i-1];
+		float curSample=line.luminance[i];
+		if(curSample>leadingThreshold && prevSample<=leadingThreshold){
+			leadingOffset=i-leadingAlign+(leadingThreshold-prevSample)/(curSample-prevSample);
+			break;
 		}
 	}
 	
+	// Find the falling edge of the trailing sync pulse, going left to right
+	// _____
+	// ---> \____
+	for(int i=trailingAlign-15;i<numSamples;i++){
+		float prevSample=line.luminance[i-1];
+		float curSample=line.luminance[i];
+		if(curSample<trailingThreshold && prevSample>=trailingThreshold){
+			trailingOffset=i-trailingAlign+(trailingThreshold-prevSample)/(curSample-prevSample);
+			break;
+		}
+	}
 	
 	vector<float> interpolatedLuminance(DEFAULT_LINE_DURATION);
 	vector<float> interpolatedChrominance(DEFAULT_LINE_DURATION);
 	
 	for(int x=0;x<DEFAULT_LINE_DURATION;x++){
-		float sampleOffsetK=x/(float)DEFAULT_LINE_DURATION;
-		float sampleOffset=endOffset*sampleOffsetK+offset*(1.0f-sampleOffsetK);
+		float sampleOffsetK=std::clamp((x-leadingAlignDest)/(float)trailingAlign, 0.0f, 1.0f);
+		float sampleOffset=trailingOffset*sampleOffsetK+leadingOffset*(1.0f-sampleOffsetK);
 		float sampleIndex=std::clamp(x/(float)DEFAULT_LINE_DURATION*numSamples+sampleOffset, 0.0f, (float)numSamples-2);
 		float k=sampleIndex-(int)sampleIndex;
 
