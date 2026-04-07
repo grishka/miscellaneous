@@ -27,7 +27,6 @@
 #define MIN_SYNC_DURATION 35 // 1.75 us
 #define LINE_SYNC_MIN_DURATION 70 // 3.5 us
 #define LINE_SYNC_MAX_DURATION 129 // 6.45 us
-#define BUFFER_SIZE_THRESHOLD (DEFAULT_LINE_DURATION*625*2)
 
 FIRFilter chromaSeparationFilter({
 	-0.0008084198921017675, 0.0006187579867392353, -0.0042764826290806, 0.00023552803823015075, 0.0029350689942645334, 0.0018303194259556947, -0.0006665164815438609, -0.0009775065344609743, 0.0011472693670836079, 0.0021899359358202902,
@@ -92,7 +91,14 @@ Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmap
 
 void Decoder::handleSampleData(uint8_t* samples, size_t count){
 	blockingSemaphore.Acquire();
-	tgvoip::Buffer buf=bufferPool.Get();
+	tgvoip::Buffer buf;
+	try{
+		buf=bufferPool.Get();
+	}catch(std::bad_alloc& x){
+		printf("Can't keep up with real time, dropping buffer!\n");
+		blockingSemaphore.Release();
+		return;
+	}
 	buf.CopyFrom(samples, 0, count);
 	blockingSemaphore.Release();
 	newlyAcquiredDataBuffers.Put(std::move(buf));
@@ -104,10 +110,8 @@ void Decoder::runDecoderThread(){
 	const int filterSize=chromaSeparationFilter.getSize();
 	const int filterDelay=chromaSeparationFilter.getDelay();
 	float *samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
-	for(int i=0;i<DEFAULT_LINE_DURATION;i++)
-		prevLineChroma.push_back(0);
+	prevLineChroma=(float*)calloc(DEFAULT_LINE_DURATION, sizeof(float));
 	
-	vector<float> currentFieldLuminance, currentFieldChrominance, currentFieldRaw, currentFieldLuminanceForSync;
 	vector<SyncPulse> currentFieldSyncPulses;
 	vector<SyncPulse> syncPulseLocations;
 	vector<SyncPulse> fixedSyncPulseLocations;
@@ -126,6 +130,20 @@ void Decoder::runDecoderThread(){
 
 	float *luminanceForSync=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	float *nextLuminanceForSync=(float*)calloc(BUFFER_SIZE, sizeof(float));
+	
+	for(int i=0;i<6;i++){
+		VideoField field;
+		int size=MAX_LINE_DURATION*625;
+		field.luminance=(float*)calloc(size, sizeof(float));
+		field.filteredLuminance=(float*)calloc(size, sizeof(float));
+		field.chrominance=(float*)calloc(size, sizeof(float));
+		field.raw=(float*)calloc(size, sizeof(float));
+		field.numSamples=0;
+		fieldPool.push_back(field);
+	}
+	
+	VideoField currentField=fieldPool.front();
+	fieldPool.pop_front();
 	
 	BiquadFilter syncLowpass(-1.69096225, 0.73269106, 0.01043220, 0.02086441, 0.01043220);
 	
@@ -305,34 +323,40 @@ void Decoder::runDecoderThread(){
 					fieldDuration-=DEFAULT_LINE_DURATION/2;
 				//printf("long pulse: %d samples (%f / %d lines) location %d last %d, %s field, add %d samples\n", fieldDuration, fieldDuration/(float)DEFAULT_LINE_DURATION, (int)roundf(fieldDuration/(float)DEFAULT_LINE_DURATION), loc, lastLongSyncPulseLocation, nextFieldIsBottom ? "bottom" : "top", lastLongSyncPulseLocation+fieldDuration);
 				
-				vector<float> nextFieldLuminance, nextFieldChrominance, nextFieldLuminanceForSync, nextFieldRaw;
+				VideoField nextField=fieldPool.front();
+				fieldPool.pop_front();
+				assert(nextField.numSamples==0);
 				if(lastLongSyncPulseLocation+fieldDuration<0){
 					int samplesToMove=-(lastLongSyncPulseLocation+fieldDuration);
 					//printf("moving %d samples\n", samplesToMove);
-					nextFieldLuminance=vector<float>(currentFieldLuminance.end()-samplesToMove, currentFieldLuminance.end());
-					nextFieldChrominance=vector<float>(currentFieldChrominance.end()-samplesToMove, currentFieldChrominance.end());
-					nextFieldLuminanceForSync=vector<float>(currentFieldLuminanceForSync.end()-samplesToMove, currentFieldLuminanceForSync.end());
-					nextFieldRaw=vector<float>(currentFieldRaw.end()-samplesToMove, currentFieldRaw.end());
-					currentFieldLuminance.erase(currentFieldLuminance.end()-samplesToMove, currentFieldLuminance.end());
-					currentFieldChrominance.erase(currentFieldChrominance.end()-samplesToMove, currentFieldChrominance.end());
-					currentFieldLuminanceForSync.erase(currentFieldLuminanceForSync.end()-samplesToMove, currentFieldLuminanceForSync.end());
-					currentFieldRaw.erase(currentFieldRaw.end()-samplesToMove, currentFieldRaw.end());
+					int offset=currentField.numSamples-samplesToMove;
+					memcpy(nextField.luminance, currentField.luminance+offset, samplesToMove*sizeof(float));
+					memcpy(nextField.chrominance, currentField.chrominance+offset, samplesToMove*sizeof(float));
+					memcpy(nextField.filteredLuminance, currentField.filteredLuminance+offset, samplesToMove*sizeof(float));
+					memcpy(nextField.raw, currentField.raw+offset, samplesToMove*sizeof(float));
+
+					currentField.numSamples-=samplesToMove;
+					nextField.numSamples=samplesToMove;
 				}else{
-					currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+std::max(0, lastLongSyncPulseLocation), luminance+lastLongSyncPulseLocation+fieldDuration);
-					currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+std::max(0, lastLongSyncPulseLocation), chrominance+lastLongSyncPulseLocation+fieldDuration);
-					currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+std::max(0, lastLongSyncPulseLocation), luminanceForSync+lastLongSyncPulseLocation+fieldDuration);
-					currentFieldRaw.insert(currentFieldRaw.end(), raw+std::max(0, lastLongSyncPulseLocation), raw+lastLongSyncPulseLocation+fieldDuration);
+					int offset=std::max(0, lastLongSyncPulseLocation);
+					int count=fieldDuration+std::min(lastLongSyncPulseLocation, 0);
+					
+					memcpy(currentField.luminance+currentField.numSamples, luminance+offset, count*sizeof(float));
+					memcpy(currentField.chrominance+currentField.numSamples, chrominance+offset, count*sizeof(float));
+					memcpy(currentField.filteredLuminance+currentField.numSamples, luminanceForSync+offset, count*sizeof(float));
+					memcpy(currentField.raw+currentField.numSamples, raw+offset, count*sizeof(float));
+
+					currentField.numSamples+=count;
 				}
-				assert(currentFieldLuminance.size()==fieldDuration);
+				assert(currentField.numSamples==fieldDuration);
 				for(int j=10;j<i;j++){
 					if(syncPulseLocations[j].location>=lastLongSyncPulseLocation)
 						currentFieldSyncPulses.push_back(syncPulseLocations[j].offset(-lastLongSyncPulseLocation));
 				}
-				vector<VideoLine> field=processField(currentFieldLuminance, currentFieldChrominance, currentFieldLuminanceForSync, currentFieldRaw, currentFieldSyncPulses, syncLevel, blackLevel, visibleBrightnessRange, nextFieldIsBottom);
-				currentFieldLuminance=nextFieldLuminance;
-				currentFieldChrominance=nextFieldChrominance;
-				currentFieldLuminanceForSync=nextFieldLuminanceForSync;
-				currentFieldRaw=nextFieldRaw;
+				vector<VideoLine> field=processField(currentField, currentFieldSyncPulses, syncLevel, blackLevel, visibleBrightnessRange, nextFieldIsBottom);
+				currentField.numSamples=0;
+				fieldPool.push_back(currentField);
+				currentField=nextField;
 				currentFieldSyncPulses.clear();
 				
 				nextFieldIsBottom=nextIsBottom;
@@ -351,28 +375,30 @@ void Decoder::runDecoderThread(){
 		else
 			nextFieldDuration=DEFAULT_LINE_DURATION*312;
 		while(unprocessedSamplesRemain>=nextFieldDuration){
-			currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+std::max(0, lastLongSyncPulseLocation), luminance+lastLongSyncPulseLocation+nextFieldDuration);
-			currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+std::max(0, lastLongSyncPulseLocation), chrominance+lastLongSyncPulseLocation+nextFieldDuration);
-			currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+std::max(0, lastLongSyncPulseLocation), luminanceForSync+lastLongSyncPulseLocation+nextFieldDuration);
-			currentFieldRaw.insert(currentFieldRaw.end(), raw+std::max(0, lastLongSyncPulseLocation), raw+lastLongSyncPulseLocation+nextFieldDuration);
-			assert(currentFieldLuminance.size()==nextFieldDuration);
+			int offset=std::max(0, lastLongSyncPulseLocation);
+			int count=nextFieldDuration+std::min(lastLongSyncPulseLocation, 0);
+
+			memcpy(currentField.luminance+currentField.numSamples, luminance+offset, count*sizeof(float));
+			memcpy(currentField.chrominance+currentField.numSamples, chrominance+offset, count*sizeof(float));
+			memcpy(currentField.filteredLuminance+currentField.numSamples, luminanceForSync+offset, count*sizeof(float));
+			memcpy(currentField.raw+currentField.numSamples, raw+offset, count*sizeof(float));
+			currentField.numSamples+=count;
+
+			assert(currentField.numSamples==nextFieldDuration);
 			for(int j=10;j<syncPulseLocations.size();j++){
 				if(syncPulseLocations[j].location>=std::min(BUFFER_SIZE, lastLongSyncPulseLocation+nextFieldDuration))
 					break;
 				if(syncPulseLocations[j].location>=lastLongSyncPulseLocation)
 					currentFieldSyncPulses.push_back(syncPulseLocations[j].offset(-lastLongSyncPulseLocation));
 			}
-			vector<VideoLine> field=processField(currentFieldLuminance, currentFieldChrominance, currentFieldLuminanceForSync, currentFieldRaw, currentFieldSyncPulses, syncLevel, blackLevel, visibleBrightnessRange, nextFieldIsBottom);
-			currentFieldLuminance.clear();
-			currentFieldChrominance.clear();
-			currentFieldLuminanceForSync.clear();
-			currentFieldRaw.clear();
+			vector<VideoLine> field=processField(currentField, currentFieldSyncPulses, syncLevel, blackLevel, visibleBrightnessRange, nextFieldIsBottom);
+			currentField.numSamples=0;
 			currentFieldSyncPulses.clear();
 
 			lastLongSyncPulseLocation+=nextFieldDuration;
 			earliestNextLongSyncPulseLocation=lastLongSyncPulseLocation+DEFAULT_LINE_DURATION*10;
 			unprocessedSamplesRemain-=nextFieldDuration;
-			printf("desync, adding field, last location %d, remain %d, %s field\n", lastLongSyncPulseLocation, unprocessedSamplesRemain, nextFieldIsBottom ? "bottom" : "top");
+			//printf("desync, adding field, last location %d, remain %d, %s field\n", lastLongSyncPulseLocation, unprocessedSamplesRemain, nextFieldIsBottom ? "bottom" : "top");
 			nextFieldIsBottom=!nextFieldIsBottom;
 			if(nextFieldIsBottom)
 				nextFieldDuration=DEFAULT_LINE_DURATION*313;
@@ -380,10 +406,13 @@ void Decoder::runDecoderThread(){
 				nextFieldDuration=DEFAULT_LINE_DURATION*312;
 		}
 		if(unprocessedSamplesRemain){
-			currentFieldLuminance.insert(currentFieldLuminance.end(), luminance+(BUFFER_SIZE-unprocessedSamplesRemain), luminance+BUFFER_SIZE);
-			currentFieldChrominance.insert(currentFieldChrominance.end(), chrominance+(BUFFER_SIZE-unprocessedSamplesRemain), chrominance+BUFFER_SIZE);
-			currentFieldLuminanceForSync.insert(currentFieldLuminanceForSync.end(), luminanceForSync+(BUFFER_SIZE-unprocessedSamplesRemain), luminanceForSync+BUFFER_SIZE);
-			currentFieldRaw.insert(currentFieldRaw.end(), raw+(BUFFER_SIZE-unprocessedSamplesRemain), raw+BUFFER_SIZE);
+			int offset=BUFFER_SIZE-unprocessedSamplesRemain;
+			memcpy(currentField.luminance+currentField.numSamples, luminance+offset, unprocessedSamplesRemain*sizeof(float));
+			memcpy(currentField.chrominance+currentField.numSamples, chrominance+offset, unprocessedSamplesRemain*sizeof(float));
+			memcpy(currentField.filteredLuminance+currentField.numSamples, luminanceForSync+offset, unprocessedSamplesRemain*sizeof(float));
+			memcpy(currentField.raw+currentField.numSamples, raw+offset, unprocessedSamplesRemain*sizeof(float));
+			currentField.numSamples+=unprocessedSamplesRemain;
+
 			for(int j=10;j<syncPulseLocations.size();j++){
 				if(syncPulseLocations[j].location>=BUFFER_SIZE)
 					break;
@@ -409,38 +438,49 @@ void Decoder::runDecoderThread(){
 	free(prevChrominance);
 	free(luminanceForSync);
 	free(nextLuminanceForSync);
+	free(prevLineChroma);
+	for(VideoField& f:fieldQueue){
+		free(f.luminance);
+		free(f.chrominance);
+		free(f.filteredLuminance);
+		free(f.raw);
+	}
+	for(VideoField& f:fieldPool){
+		free(f.luminance);
+		free(f.chrominance);
+		free(f.filteredLuminance);
+		free(f.raw);
+	}
 }
 
 Decoder::VideoLine Decoder::joinLines(VideoLine a, VideoLine b){
-	vector<float> luminance=a.luminance;
-	luminance.insert(luminance.end(), b.luminance.begin(), b.luminance.end());
-	vector<float> chrominance=a.chrominance;
-	chrominance.insert(chrominance.end(), b.chrominance.begin(), b.chrominance.end());
-	vector<float> filteredLuminance=a.filteredLuminance;
-	filteredLuminance.insert(filteredLuminance.end(), b.filteredLuminance.begin(), b.filteredLuminance.end());
-	vector<float> raw=a.raw;
-	raw.insert(raw.end(), b.raw.begin(), b.raw.end());
+	assert(a.luminance+a.numSamples==b.luminance);
+	assert(a.chrominance+a.numSamples==b.chrominance);
+	assert(a.filteredLuminance+a.numSamples==b.filteredLuminance);
+	assert(a.raw+a.numSamples==b.raw);
+	
 	vector<SyncPulse> sync=a.sync;
 	for(SyncPulse sp:b.sync){
-		sync.push_back(sp.offset((int)a.luminance.size()));
+		sync.push_back(sp.offset(a.numSamples));
 	}
 	//printf("join %d + %d -> %d\n", (int)a.luminance.size(), (int)b.luminance.size(), (int)luminance.size());
 	return VideoLine{
-		.luminance=luminance,
-		.chrominance=chrominance,
-		.filteredLuminance=filteredLuminance,
-		.raw=raw,
+		.luminance=a.luminance,
+		.chrominance=a.chrominance,
+		.filteredLuminance=a.filteredLuminance,
+		.raw=a.raw,
 		.sync=sync,
+		.numSamples=a.numSamples+b.numSamples
 	};
 }
 
 std::vector<Decoder::VideoLine> Decoder::splitLine(VideoLine line, int numParts){
-	float partLength=(float)line.luminance.size()/numParts;
+	float partLength=(float)line.numSamples/numParts;
 	//printf("split into %d parts %f samples each\n", numParts, partLength);
 	vector<VideoLine> parts;
 	for(int i=0;i<numParts;i++){
 		int offset=(int)(partLength*i);
-		int length=i==numParts-1 ? (int)line.chrominance.size()-offset : (int)partLength;
+		int length=i==numParts-1 ? (int)line.numSamples-offset : (int)partLength;
 		assert(length>0);
 		vector<SyncPulse> sync;
 		for(SyncPulse sp:line.sync){
@@ -448,11 +488,12 @@ std::vector<Decoder::VideoLine> Decoder::splitLine(VideoLine line, int numParts)
 				sync.push_back(sp);
 		}
 		VideoLine part={
-			.luminance=vector<float>(line.luminance.begin()+offset, line.luminance.begin()+offset+length),
-			.chrominance=vector<float>(line.chrominance.begin()+offset, line.chrominance.begin()+offset+length),
-			.filteredLuminance=vector<float>(line.filteredLuminance.begin()+offset, line.filteredLuminance.begin()+offset+length),
-			.raw=vector<float>(line.raw.begin()+offset, line.raw.begin()+offset+length),
+			.luminance=line.luminance+offset,
+			.chrominance=line.chrominance+offset,
+			.filteredLuminance=line.filteredLuminance+offset,
+			.raw=line.raw+offset,
 			.sync=sync,
+			.numSamples=length
 		};
 		parts.push_back(part);
 	}
@@ -491,25 +532,36 @@ void Decoder::demodulateColorSubcarrier(float *samples, float *chrominance, int 
 	chromaDeemphasisFilter->process(chrominance, chrominance, count);
 }
 
-vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, std::vector<float> chrominance, std::vector<float> filteredLuminance, std::vector<float> raw, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom){
-	assert(luminance.size()==chrominance.size());
-	assert(luminance.size()==filteredLuminance.size());
+vector<Decoder::VideoLine> Decoder::processField(VideoField field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom){
 	SyncPulse nextSyncPulse=sync.size() ? sync[0] : SyncPulse{0, 0};
 	int syncPulseIndex=0;
-	VideoLine currentLine;
+	VideoLine currentLine={
+		.luminance=field.luminance,
+		.chrominance=field.chrominance,
+		.filteredLuminance=field.filteredLuminance,
+		.raw=field.raw,
+		.sync=vector<SyncPulse>(),
+		.offsetInBuffer=0,
+		.numSamples=0
+	};
 	vector<VideoLine> lines;
 	int nextLineStartEarliestLocation=MIN_LINE_DURATION;
 	float syncLevelSum=0, blackLevelSum=0;
 	int syncLevelSampleCount=0, syncSamplesToAdd=0, blackLevelSampleCount=0, blackSamplesToAdd=0, blackSampleDelay=0;
-	for(int i=0;i<luminance.size();i++){
-		currentLine.luminance.push_back(luminance[i]);
-		currentLine.chrominance.push_back(chrominance[i]);
-		currentLine.filteredLuminance.push_back(filteredLuminance[i]);
-		currentLine.raw.push_back(raw[i]);
+	for(int i=0;i<field.numSamples;i++){
+		currentLine.numSamples++;
 		if(i==nextSyncPulse.location){
 			if(nextSyncPulse.location>=nextLineStartEarliestLocation){
 				lines.push_back(currentLine);
-				currentLine=VideoLine();
+				currentLine={
+					.luminance=field.luminance+i+1,
+					.chrominance=field.chrominance+i+1,
+					.filteredLuminance=field.filteredLuminance+i+1,
+					.raw=field.raw+i+1,
+					.sync=vector<SyncPulse>(),
+					.offsetInBuffer=0,
+					.numSamples=0
+				};
 				nextLineStartEarliestLocation=nextSyncPulse.location+MIN_LINE_DURATION;
 			}
 			syncSamplesToAdd=nextSyncPulse.length;
@@ -522,7 +574,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 				nextSyncPulse=sync[syncPulseIndex];
 		}
 		if(syncSamplesToAdd){
-			syncLevelSum+=filteredLuminance[i];
+			syncLevelSum+=field.filteredLuminance[i];
 			syncSamplesToAdd--;
 			syncLevelSampleCount++;
 		}
@@ -530,30 +582,30 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 			if(blackSampleDelay){
 				blackSampleDelay--;
 			}else{
-				blackLevelSum+=filteredLuminance[i];
+				blackLevelSum+=field.filteredLuminance[i];
 				blackSamplesToAdd--;
 				blackLevelSampleCount++;
 			}
 		}
 	}
-	if(currentLine.luminance.size()>=MIN_LINE_DURATION){
+	if(currentLine.numSamples>=MIN_LINE_DURATION){
 		lines.push_back(currentLine);
 	}
 	
 	int j=0;
 	for(auto line=lines.begin();line!=lines.end() && j<313;line++, j++){
-		if(line->luminance.size()>/*MIN_LINE_DURATION*2*/MAX_LINE_DURATION){
+		if(line->numSamples>MAX_LINE_DURATION){
 			//printf("line of length %d offset %d\n", (int)line->luminance.size(), line->offsetInBuffer);
 			VideoLine joined=*line;
 			vector<VideoLine>::iterator replaceBegin=line, replaceEnd=line+1;
 			if(line!=lines.begin()){
 				VideoLine prev=*(line-1);
-				if(prev.luminance.size()>MAX_LINE_DURATION){
+				if(prev.numSamples>MAX_LINE_DURATION){
 					joined=joinLines(prev, joined);
 					replaceBegin=line-1;
 				}
 			}
-			int numParts=(int)roundf(joined.luminance.size()/(float)DEFAULT_LINE_DURATION);
+			int numParts=(int)roundf(joined.numSamples/(float)DEFAULT_LINE_DURATION);
 			if(numParts>1){
 				vector<VideoLine> parts=splitLine(joined, numParts);
 				line=lines.erase(replaceBegin, replaceEnd);
@@ -563,8 +615,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 	}
 	
 	if(lines.size()>313){
-		printf("field too long with %d lines\n", (int)lines.size());
-		//lines.erase(lines.begin(), lines.begin()+(lines.size()-313));
+		//printf("field too long with %d lines\n", (int)lines.size());
 		lines.erase(lines.begin()+313, lines.end());
 	}
 	
@@ -601,7 +652,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 				float sumForWhiteLevel=0;
 				int sampleCount=0;
 				VideoLine line=field.lines[j];
-				for(int k=120;k<line.filteredLuminance.size();k++){
+				for(int k=120;k<line.numSamples;k++){
 					if(line.filteredLuminance[k]>defaultWhiteLevel){
 						sumForWhiteLevel+=line.filteredLuminance[k];
 						sampleCount++;
@@ -621,7 +672,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 			int offset=0;
 			for(int i=0;i<16;i++){
 				VideoLine line=field.lines[(field.isBottom ? 14 : 13)+i];
-				int lineLength=std::min((int)line.raw.size(), DEFAULT_LINE_DURATION);
+				int lineLength=std::min(line.numSamples, DEFAULT_LINE_DURATION);
 				for(int j=0;j<lineLength;j++){
 					vbiData[offset+j]=(uint8_t)roundf(std::clamp((line.raw[j]-blackLevel)/(whiteLevel-blackLevel)*0.8f+0.2f, 0.0f, 1.0f)*255.0f);
 				}
@@ -640,11 +691,7 @@ vector<Decoder::VideoLine> Decoder::processField(std::vector<float> luminance, s
 }
 
 void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel){
-	int numSamples=(int)line.luminance.size();
-	/*if(numSamples<MIN_LINE_DURATION){
-		printf("line %d is too short (%d samples)\n", lineIndex, numSamples);
-		return;
-	}*/
+	int numSamples=line.numSamples;
 
 	uint32_t* bitmapPixels=(uint32_t*)bitmapData;
 	float visibleBrightnessRange=whiteLevel-blackLevel;
@@ -682,10 +729,10 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 	}
 	float centerFreq=isRedLine ? redCenterFreq : blueCenterFreq;
 	float maxDeviation=isRedLine ? redMaxDeviation : blueMaxDeviation;
-	for(float& chromaSample:line.chrominance){
-		chromaSample=std::clamp((chromaSample-centerFreq)/maxDeviation, -1.0f, 1.0f);
+	for(int i=0;i<numSamples;i++){
+		line.chrominance[i]=std::clamp((line.chrominance[i]-centerFreq)/maxDeviation, -1.0f, 1.0f);
 	}
-	chromaLowpassFilter->process(line.chrominance.data(), line.chrominance.data(), (int)line.chrominance.size());
+	chromaLowpassFilter->process(line.chrominance, line.chrominance, numSamples);
 
 	// Precisely align lines relative to each other by offsetting and interpolating them such that the edges of the sync pulses either end of the line
 	// end up at exact known X coordinates in the framebuffer
@@ -731,8 +778,8 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 		}
 	}
 	
-	vector<float> interpolatedLuminance(DEFAULT_LINE_DURATION);
-	vector<float> interpolatedChrominance(DEFAULT_LINE_DURATION);
+	float interpolatedLuminance[DEFAULT_LINE_DURATION];
+	float interpolatedChrominance[DEFAULT_LINE_DURATION];
 	
 	for(int x=0;x<DEFAULT_LINE_DURATION;x++){
 		float sampleOffsetK=std::clamp((x-leadingAlignDest)/(float)trailingAlign, 0.0f, 1.0f);
@@ -749,19 +796,21 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 		interpolatedChrominance[x]=sample2C*k+sample1C*(1.0f-k);
 	}
 	
-	if(colorMode==ColorDisplayMode::Raw && line.raw.size()<DEFAULT_LINE_DURATION){
-		for(int i=0;i<DEFAULT_LINE_DURATION-line.raw.size();i++){
-			line.raw.push_back(0);
+	if(colorMode==ColorDisplayMode::Raw && numSamples<DEFAULT_LINE_DURATION){
+		for(int i=numSamples;i<DEFAULT_LINE_DURATION;i++){
+			line.raw[i]=0;
 		}
 	}
 
 	if(lineIndex==scopeLineIndex){
 		scopeData1.clear();
-		for(float v:line.luminance){
+		for(int i=0;i<numSamples;i++){
+			float v=line.luminance[i];
 			scopeData1.push_back((float)v);
 		}
 		scopeData2.clear();
-		for(float v:line.chrominance){
+		for(int i=0;i<numSamples;i++){
+			float v=line.chrominance[i];
 			scopeData2.push_back((float)v/2+0.5);
 		}
 		scopeLines.clear();
@@ -770,30 +819,35 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 		scopeLines.push_back(whiteLevel);
 	}
 
-	vector<float>* _samplesForDisplay;
+	float* samplesForDisplay;
+	int numSamplesForDisplay;
 	switch(colorMode){
 		case ColorDisplayMode::Full:
-			_samplesForDisplay=&interpolatedLuminance;
+			samplesForDisplay=interpolatedLuminance;
+			numSamplesForDisplay=DEFAULT_LINE_DURATION;
 			break;
 		case ColorDisplayMode::Raw:
-			_samplesForDisplay=&line.raw;
+			samplesForDisplay=line.raw;
+			numSamplesForDisplay=numSamples;
 			break;
 		case ColorDisplayMode::Y:
-			_samplesForDisplay=&interpolatedLuminance;
+			samplesForDisplay=interpolatedLuminance;
+			numSamplesForDisplay=DEFAULT_LINE_DURATION;
 			break;
 		case ColorDisplayMode::Db:
-			_samplesForDisplay=isRedLine ? &prevLineChroma : &interpolatedChrominance;
+			samplesForDisplay=isRedLine ? prevLineChroma : interpolatedChrominance;
+			numSamplesForDisplay=DEFAULT_LINE_DURATION;
 			break;
 		case ColorDisplayMode::Dr:
-			_samplesForDisplay=isRedLine ? &interpolatedChrominance : &prevLineChroma;
+			samplesForDisplay=isRedLine ? interpolatedChrominance : prevLineChroma;
+			numSamplesForDisplay=DEFAULT_LINE_DURATION;
 			break;
 	}
-	vector<float> samplesForDisplay=*_samplesForDisplay;
-	vector<float>& crSamples(isRedLine ? interpolatedChrominance : prevLineChroma);
-	vector<float>& cbSamples(isRedLine ? prevLineChroma : interpolatedChrominance);
+	float* crSamples=isRedLine ? interpolatedChrominance : prevLineChroma;
+	float* cbSamples=isRedLine ? prevLineChroma : interpolatedChrominance;
 
 	for(int x=0;x<bitmapWidth;x++){
-		float sampleIndex=std::clamp(x/(float)bitmapWidth*samplesForDisplay.size(), 0.0f, (float)samplesForDisplay.size()-2);
+		float sampleIndex=std::clamp(x/(float)bitmapWidth*numSamplesForDisplay, 0.0f, (float)numSamplesForDisplay-2);
 		float sample1=samplesForDisplay[((int)sampleIndex)];
 		float sample2=samplesForDisplay[(int)sampleIndex+1];
 		float k=sampleIndex-(int)sampleIndex;
@@ -877,7 +931,7 @@ void Decoder::processLine(Decoder::VideoLine line, int lineIndex, float syncLeve
 		}
 	}
 	
-	prevLineChroma=interpolatedChrominance;
+	memcpy(prevLineChroma, interpolatedChrominance, sizeof(float)*DEFAULT_LINE_DURATION);
 }
 
 tgvoip::Buffer Decoder::getOutputFrame(){

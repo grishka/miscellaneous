@@ -69,12 +69,13 @@ private:
 	};
 	
 	struct VideoLine{
-		std::vector<float> luminance;
-		std::vector<float> chrominance;
-		std::vector<float> filteredLuminance;
-		std::vector<float> raw;
+		float *luminance;
+		float *chrominance;
+		float *filteredLuminance;
+		float *raw;
 		std::vector<SyncPulse> sync;
 		int offsetInBuffer;
+		int numSamples;
 	};
 	
 	struct VideoField{
@@ -82,10 +83,16 @@ private:
 		bool isBottom;
 		float syncLevel;
 		float blackLevel;
+		
+		float *luminance;
+		float *chrominance;
+		float *filteredLuminance;
+		float *raw;
+		int numSamples;
 	};
 	
 	void runDecoderThread();
-	std::vector<VideoLine> processField(std::vector<float> luminance, std::vector<float> chrominance, std::vector<float> filteredLuminance, std::vector<float> raw, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
+	std::vector<VideoLine> processField(VideoField field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
 	void processLine(VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel);
 	void demodulateColorSubcarrier(float *samples, float *chrominance, int count);
 	void outputCapturedFrame();
@@ -99,7 +106,8 @@ private:
 	tgvoip::BufferPool<942*625*4, 10> outputBufferPool;
 	tgvoip::BlockingQueue<tgvoip::Buffer> outputQueue=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
-	std::vector<float> prevLineChroma;
+	float* prevLineChroma;
+	std::deque<VideoField> fieldPool;
 	std::deque<VideoField> fieldQueue;
 	void* bitmapData;
 	unsigned int bitmapWidth, bitmapHeight, bitmapStride;
