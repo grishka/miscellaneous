@@ -39,6 +39,7 @@ enum class DisplayLevelsMode{
 class Decoder{
 public:
 	Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmapHeight, unsigned int bitmapStride, CFRunLoopSourceRef runLoopSource);
+	~Decoder();
 	void handleSampleData(uint8_t* samples, size_t count);
 	tgvoip::Buffer getOutputFrame();
 	void startOutput();
@@ -91,6 +92,23 @@ private:
 		int numSamples;
 	};
 	
+	class ColorDecoder{
+	public:
+		virtual ~ColorDecoder(){};
+		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer)=0;
+	};
+	
+	class ColorDecoderSECAM: public ColorDecoder{
+	public:
+		ColorDecoderSECAM();
+		virtual ~ColorDecoderSECAM();
+		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer);
+	private:
+		FIRFilter chromaSeparationFilter;
+		float *samples;
+		float *subcarrier;
+	};
+	
 	void runDecoderThread();
 	std::vector<VideoLine> processField(VideoField field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
 	void processLine(VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel);
@@ -106,6 +124,8 @@ private:
 	tgvoip::BufferPool<942*625*4, 10> outputBufferPool;
 	tgvoip::BlockingQueue<tgvoip::Buffer> outputQueue=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
+	ColorDecoder *colorDecoder;
+	
 	float* prevLineChroma;
 	std::deque<VideoField> fieldPool;
 	std::deque<VideoField> fieldQueue;
