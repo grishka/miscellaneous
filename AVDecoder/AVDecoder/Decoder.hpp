@@ -36,6 +36,10 @@ enum class DisplayLevelsMode{
 	Raw
 };
 
+class VideoField;
+class VideoLine;
+class SignalBuffers;
+
 class Decoder{
 public:
 	Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmapHeight, unsigned int bitmapStride, CFRunLoopSourceRef runLoopSource);
@@ -56,7 +60,7 @@ public:
 	int scopeLineIndex=16;
 	float whiteLevelRatio=0.43; // ratio between sync to black and black to white
 	std::function<void(uint8_t*, size_t)> vbiDataCallback;
-private:
+	
 	struct SyncPulse{
 		int location;
 		int length;
@@ -68,34 +72,13 @@ private:
 			};
 		}
 	};
-	
-	struct VideoLine{
-		float *luminance;
-		float *chrominance;
-		float *filteredLuminance;
-		float *raw;
-		std::vector<SyncPulse> sync;
-		int offsetInBuffer;
-		int numSamples;
-	};
-	
-	struct VideoField{
-		std::vector<VideoLine> lines;
-		bool isBottom;
-		float syncLevel;
-		float blackLevel;
-		
-		float *luminance;
-		float *chrominance;
-		float *filteredLuminance;
-		float *raw;
-		int numSamples;
-	};
+private:
 	
 	class ColorDecoder{
 	public:
 		virtual ~ColorDecoder(){};
 		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer)=0;
+		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf)=0;
 	};
 	
 	class ColorDecoderSECAM: public ColorDecoder{
@@ -103,16 +86,20 @@ private:
 		ColorDecoderSECAM();
 		virtual ~ColorDecoderSECAM();
 		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer);
+		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf);
 	private:
 		FIRFilter chromaSeparationFilter;
+		BiquadFilter chromaDeemphasisFilter;
 		float *samples;
 		float *subcarrier;
+		float lastZeroCrossingLocation=0;
+		float lastUsedZeroCrossingLocation=0;
+		float lastChromaValue=0;
 	};
 	
 	void runDecoderThread();
-	std::vector<VideoLine> processField(VideoField field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
+	std::vector<VideoLine> processField(VideoField* field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
 	void processLine(VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel);
-	void demodulateColorSubcarrier(float *samples, float *chrominance, int count);
 	void outputCapturedFrame();
 	VideoLine joinLines(VideoLine a, VideoLine b);
 	std::vector<VideoLine> splitLine(VideoLine line, int numParts);
@@ -127,8 +114,8 @@ private:
 	ColorDecoder *colorDecoder;
 	
 	float* prevLineChroma;
-	std::deque<VideoField> fieldPool;
-	std::deque<VideoField> fieldQueue;
+	std::deque<VideoField*> fieldPool;
+	std::deque<VideoField*> fieldQueue;
 	void* bitmapData;
 	unsigned int bitmapWidth, bitmapHeight, bitmapStride;
 	bool running=true;
@@ -148,15 +135,10 @@ private:
 	float blueMaxDeviation=230000/20000000.0f;
 	int colorLineOffset=0;
 	
-	BiquadFilter *chromaDeemphasisFilter;
 	BiquadFilter *chromaLowpassFilter;
 	
 	int frameCount=0;
 	uint64_t lastFrameTime;
-	
-	float lastZeroCrossingLocation=0;
-	float lastUsedZeroCrossingLocation=0;
-	float lastChromaValue=0;
 	
 	CFRunLoopSourceRef runLoopSource;
 	CFRunLoopRef mainThreadRunLoop;
