@@ -67,3 +67,39 @@ void BiquadFilter::process(const float *input, float *output, int count){
 	}
 #endif
 }
+
+HilbertTransform::HilbertTransform(size_t sizeLog2n){
+	fftSetup=vDSP_create_fftsetup(sizeLog2n, kFFTRadix2);
+	this->sizeLog2n=sizeLog2n;
+	zeros=(float*)calloc(1 << sizeLog2n, sizeof(float));
+	outputReal=(float*)calloc(1 << sizeLog2n, sizeof(float));
+}
+
+HilbertTransform::~HilbertTransform(){
+	vDSP_destroy_fftsetup(fftSetup);
+	free(zeros);
+	free(outputReal);
+}
+
+void HilbertTransform::process(float *samples, float *qOut){
+	int size=1 << sizeLog2n;
+	DSPSplitComplex input={
+		.realp=samples,
+		.imagp=zeros
+	};
+	DSPSplitComplex output={
+		.realp=outputReal,
+		.imagp=qOut
+	};
+	vDSP_fft_zop(fftSetup, &input, 1, &output, 1, sizeLog2n, kFFTDirection_Forward);
+	// Zero out "negative" frequencies
+	memset(output.realp+size/2+1, 0, (size-(size/2+1))*sizeof(float));
+	memset(output.imagp+size/2+1, 0, (size-(size/2+1))*sizeof(float));
+	// Double positive frequencies to make up for the zeroing
+	float two=2;
+	vDSP_vsmul(output.realp+1, 1, &two, output.realp+1, 1, size/2);
+	vDSP_vsmul(output.imagp+1, 1, &two, output.imagp+1, 1, size/2);
+	vDSP_fft_zip(fftSetup, &output, 1, sizeLog2n, kFFTDirection_Inverse);
+	float scale=1.0f/size;
+	vDSP_vsmul(qOut, 1, &scale, qOut, 1, size);
+}

@@ -47,4 +47,16 @@ private:
 	int delay;
 };
 
+class HilbertTransform{
+public:
+	HilbertTransform(size_t sizeLog2n);
+	~HilbertTransform();
+	void process(float *samples, float *qOut);
+private:
+	size_t sizeLog2n;
+	FFTSetup fftSetup;
+	float *zeros;
+	float *outputReal;
+};
+
 #endif /* Filters_hpp */

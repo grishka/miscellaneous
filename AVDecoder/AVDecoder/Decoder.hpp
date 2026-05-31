@@ -95,6 +95,7 @@ private:
 		float lastZeroCrossingLocation=0;
 		float lastUsedZeroCrossingLocation=0;
 		float lastChromaValue=0;
+		HilbertTransform hilbertTransform;
 	};
 	
 	void runDecoderThread();
@@ -129,10 +130,10 @@ private:
 	float detectedWhiteLevel=0;
 	int fieldsWithoutVITS=10;
 	
-	float redCenterFreq=4406000/20000000.0f;
-	float blueCenterFreq=4250000/20000000.0f;
-	float redMaxDeviation=280000/20000000.0f;
-	float blueMaxDeviation=230000/20000000.0f;
+	float redCenterFreq=4406000;
+	float blueCenterFreq=4250000;
+	float redMaxDeviation=280000;
+	float blueMaxDeviation=230000;
 	int colorLineOffset=0;
 	
 	BiquadFilter *chromaLowpassFilter;

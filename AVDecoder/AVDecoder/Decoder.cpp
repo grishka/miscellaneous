@@ -107,9 +107,10 @@ public:
 	}
 };
 
+BiquadFilter chromaLowpass(-1.3698978138079605, 0.5254518355382106, 0.038888505432562503, 0.07777701086512501, 0.038888505432562503);
+
 Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmapHeight, unsigned int bitmapStride, CFRunLoopSourceRef runLoopSource) :bitmapData(bitmapData), bitmapWidth(bitmapWidth), bitmapHeight(bitmapHeight), bitmapStride(bitmapStride/4), decoderThread(std::bind(&Decoder::runDecoderThread, this)), runLoopSource(runLoopSource){
 	
-	chromaLowpassFilter=new BiquadFilter(-1.47543442, 0.58687001, 0.02785890, 0.05571779, 0.02785890);
 	colorDecoder=new ColorDecoderSECAM();
 	
 	currentOutputBuffer=outputBufferPool.Get();
@@ -636,7 +637,7 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 		}
 		float maxFreq=maxSum/200.0;
 		float freqDiff=centerFreq-maxFreq;
-		if(centerFreq>0.175 && centerFreq<0.225 && fabsf(freqDiff)>270000.0f/20000000.0f){
+		if(centerFreq>3500000 && centerFreq<4500000 && fabsf(freqDiff)>270000.0f){
 			bool isActuallyRedLine=maxFreq>centerFreq;
 			if(isActuallyRedLine!=isRedLine){
 				colorLineOffset=colorLineOffset==1 ? 0 : 1;
@@ -649,7 +650,6 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 	for(int i=0;i<numSamples;i++){
 		line.chrominance[0][i]=std::clamp((line.chrominance[0][i]-centerFreq)/maxDeviation, -1.0f, 1.0f);
 	}
-	chromaLowpassFilter->process(line.chrominance[0], line.chrominance[0], numSamples);
 
 	// Precisely align lines relative to each other by offsetting and interpolating them such that the edges of the sync pulses either end of the line
 	// end up at exact known X coordinates in the framebuffer
@@ -722,12 +722,14 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 	if(lineIndex==scopeLineIndex){
 		scopeData1.clear();
 		for(int i=0;i<numSamples;i++){
-			float v=line.luminance[i];
-			scopeData1.push_back((float)v);
+			/*float v=line.luminance[i];
+			scopeData1.push_back((float)v);*/
+			float v=line.chrominance[0][i];
+			scopeData1.push_back((float)v/2+0.5);
 		}
 		scopeData2.clear();
 		for(int i=0;i<numSamples;i++){
-			float v=line.chrominance[0][i];
+			float v=line.chrominance[1][i];
 			scopeData2.push_back((float)v/2+0.5);
 		}
 		scopeLines.clear();
@@ -928,7 +930,9 @@ Decoder::ColorDecoderSECAM::ColorDecoderSECAM():chromaSeparationFilter({
 	0.0003145817946935235, -0.002530829215458603, -0.0015007134485464705, 0.0019661323295239, 0.0023869658735495244, -0.0008068958794424991, -0.002485159435458123, -0.000270887639715945, 0.002048622083391921, 0.00113368338293867,
 	-0.0009594522556201064, -0.000956768070512709, 0.0005280708198815686, 0.0010436699740755866, 0.0005146661530813266, 0.000420774478514697, 0.0008300048915853866, 0.0009548680892419512, 0.0011853741115800448, 0.0022285247760404935,
 	0.003429473494516816, 0.003983026474459068, -0.006452105894518418
-}), chromaDeemphasisFilter(-1.09184352, 0.12286846, 0.58102424, -1.09184352, 0.54184422){
+}),
+	chromaDeemphasisFilter(-0.973646758810919, 0, 0.01317662059454045, 0.01317662059454045, 0),
+	hilbertTransform(19){
 	const int filterSize=chromaSeparationFilter.getSize();
 	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
 	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
@@ -946,36 +950,33 @@ float *Decoder::ColorDecoderSECAM::separateSubcarrier(float *rawSignal, float *n
 	memcpy(samples+filterDelay+BUFFER_SIZE, nextBuffer, filterDelay*sizeof(float));
 	memcpy(samples+filterDelay, rawSignal, BUFFER_SIZE*sizeof(float));
 	chromaSeparationFilter.process(samples, subcarrier, BUFFER_SIZE+filterDelay);
+	float avg=0;
+	for(int x=0;x<BUFFER_SIZE;x++){
+		avg+=subcarrier[x];
+	}
+	avg/=BUFFER_SIZE;
+	for(int x=0;x<BUFFER_SIZE;x++){
+		subcarrier[x]-=avg;
+	}
 	return subcarrier;
 }
+
 void Decoder::ColorDecoderSECAM::demodulateSubcarrier(float *samples, SignalBuffers *buf){
-	float lastZeroCrossingLocation=this->lastZeroCrossingLocation;
-	float lastUsedZeroCrossingLocation=this->lastUsedZeroCrossingLocation;
-	float lastChromaValue=this->lastChromaValue;
-	for(int x=0;x<BUFFER_SIZE-1;x++){
-		float s1=samples[x];
-		float s2=samples[x+1];
-		if((s1>0 && s2<0)){
-			float k=-s1/(s2-s1);
-			k=std::clamp(k, 0.0f, 1.0f);
-			float location=x+k;
-			float diff=location-lastZeroCrossingLocation;
-			if(diff<6 && diff>2){
-				float chromaValue=1/diff;
-				for(int i=std::max((int)lastUsedZeroCrossingLocation, 0);i<(int)location;i++){
-					float k=(i-(int)lastUsedZeroCrossingLocation)/(location-lastUsedZeroCrossingLocation);
-					buf->chrominance[0][i]=lastChromaValue*(1.0-k)+chromaValue*k;
-				}
-				lastUsedZeroCrossingLocation=location;
-				lastChromaValue=chromaValue;
-			}
-			lastZeroCrossingLocation=location;
-		}
+	hilbertTransform.process(samples, buf->chrominance[1]);
+	float gain=20000000.0f/(2*(float)M_PI);
+	for(int i=0;i<BUFFER_SIZE-1;i++){
+		float a=samples[i];
+		float b=-buf->chrominance[1][i]; // conj
+		float c=samples[i+1];
+		float d=buf->chrominance[1][i+1];
+
+		// complex multiply
+		float re=a*c-b*d;
+		float im=b*c+a*d;
+
+		float angle=atan2f(im, re);
+		buf->chrominance[0][i]=std::clamp(angle*gain, 3400000.0f, 4600000.0f);
 	}
-	
-	this->lastZeroCrossingLocation=lastZeroCrossingLocation-BUFFER_SIZE;
-	this->lastUsedZeroCrossingLocation=lastUsedZeroCrossingLocation-BUFFER_SIZE;
-	this->lastChromaValue=lastChromaValue;
-	
 	chromaDeemphasisFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
+	chromaLowpass.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
 }
