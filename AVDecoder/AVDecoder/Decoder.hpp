@@ -79,6 +79,7 @@ private:
 		virtual ~ColorDecoder(){};
 		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer)=0;
 		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf)=0;
+		virtual void decodeColor(VideoField *field)=0;
 	};
 	
 	class ColorDecoderSECAM: public ColorDecoder{
@@ -87,15 +88,19 @@ private:
 		virtual ~ColorDecoderSECAM();
 		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer);
 		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf);
+		virtual void decodeColor(VideoField *field);
 	private:
 		FIRFilter chromaSeparationFilter;
 		BiquadFilter chromaDeemphasisFilter;
 		float *samples;
 		float *subcarrier;
-		float lastZeroCrossingLocation=0;
-		float lastUsedZeroCrossingLocation=0;
-		float lastChromaValue=0;
 		HilbertTransform hilbertTransform;
+		
+		static constexpr float redCenterFreq=4406000;
+		static constexpr float blueCenterFreq=4250000;
+		static constexpr float redMaxDeviation=280000;
+		static constexpr float blueMaxDeviation=230000;
+		int colorLineOffset=0;
 	};
 	
 	void runDecoderThread();
@@ -115,7 +120,6 @@ private:
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
 	ColorDecoder *colorDecoder;
 	
-	float* prevLineChroma;
 	std::deque<VideoField*> fieldPool;
 	std::deque<VideoField*> fieldQueue;
 	VideoField *interpolatedField;
@@ -131,12 +135,6 @@ private:
 	float nextSyncLevel=0;
 	float detectedWhiteLevel=0;
 	int fieldsWithoutVITS=10;
-	
-	float redCenterFreq=4406000;
-	float blueCenterFreq=4250000;
-	float redMaxDeviation=280000;
-	float blueMaxDeviation=230000;
-	int colorLineOffset=0;
 	
 	BiquadFilter *chromaLowpassFilter;
 	

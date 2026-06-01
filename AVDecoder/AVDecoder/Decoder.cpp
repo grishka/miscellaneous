@@ -152,7 +152,6 @@ void Decoder::runDecoderThread(){
 	
 	float *samples=(float*)calloc(BUFFER_SIZE, sizeof(float));
 	float *nextSamples=(float*)calloc(BUFFER_SIZE, sizeof(float));
-	prevLineChroma=(float*)calloc(DEFAULT_LINE_DURATION, sizeof(float));
 	
 	vector<SyncPulse> currentFieldSyncPulses;
 	vector<SyncPulse> syncPulseLocations;
@@ -432,7 +431,6 @@ void Decoder::runDecoderThread(){
 	delete b;
 	delete prevBuf;
 	delete nextBuf;
-	free(prevLineChroma);
 	free(samples);
 	free(nextSamples);
 	for(VideoField* f:fieldQueue){
@@ -652,6 +650,15 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 			int lineIndex=j+(field->isBottom ? 312 : 0);
 			if(lineIndex<625){
 				interpolateLine(field->lines[j], interpolatedField->lines[j], lineLeadingOffsets[j], lineTrailingOffsets[j], lineLeadingAlignDestinations[j], lineTrailingAlignPositions[j]);
+			}
+		}
+		
+		interpolatedField->isBottom=field->isBottom;
+		colorDecoder->decodeColor(interpolatedField);
+		
+		for(int j=0;j<field->lines.size();j++){
+			int lineIndex=j+(field->isBottom ? 312 : 0);
+			if(lineIndex<625){
 				processLine(interpolatedField->lines[j], lineIndex, field->syncLevel, field->blackLevel, whiteLevel);
 			}
 		}
@@ -678,17 +685,6 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 	}
 
 	return lines;
-}
-
-void interpolateVector(float *src, float *indexes, int unused1, float *dst, int unused2, int dstLen, int srcLen){
-	for(int x=0;x<dstLen;x++){
-		float sampleIndex=indexes[x];
-		float k=sampleIndex-(int)sampleIndex;
-		
-		float sample1Y=src[((int)sampleIndex)];
-		float sample2Y=src[(int)sampleIndex+1];
-		dst[x]=sample2Y*k+sample1Y*(1.0f-k);
-	}
 }
 
 void Decoder::interpolateLine(VideoLine const& src, VideoLine const& dst, float leadingOffset, float trailingOffset, int leadingAlignDest, float trailingAlign){
@@ -719,37 +715,6 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 	else
 		bitmapLine=bitmapPixels+((lineIndex*2%bitmapHeight)*bitmapStride);
 
-	bool isRedLine=(lineIndex+colorLineOffset)%2==0;
-	if(((lineIndex>=6 && lineIndex<15) || (lineIndex>=319 && lineIndex<328)) && numSamples>=MIN_LINE_DURATION){
-		float centerSum=0;
-		float min=10;
-		float max=-10;
-		for(int i=150;i<250;i++){
-			centerSum+=line.chrominance[0][i];
-			min=std::min(line.chrominance[0][i], min);
-			max=std::max(line.chrominance[0][i], max);
-		}
-		float centerFreq=centerSum/100.0;
-		float maxSum=0;
-		for(int i=1000;i<1200;i++){
-			maxSum+=line.chrominance[0][i];
-		}
-		float maxFreq=maxSum/200.0;
-		float freqDiff=centerFreq-maxFreq;
-		if(centerFreq>3500000 && centerFreq<4500000 && fabsf(freqDiff)>270000.0f){
-			bool isActuallyRedLine=maxFreq>centerFreq;
-			if(isActuallyRedLine!=isRedLine){
-				colorLineOffset=colorLineOffset==1 ? 0 : 1;
-				isRedLine=isActuallyRedLine;
-			}
-		}
-	}
-	float centerFreq=isRedLine ? redCenterFreq : blueCenterFreq;
-	float maxDeviation=isRedLine ? redMaxDeviation : blueMaxDeviation;
-	for(int i=0;i<DEFAULT_LINE_DURATION;i++){
-		line.chrominance[0][i]=std::clamp((line.chrominance[0][i]-centerFreq)/maxDeviation, -1.0f, 1.0f);
-	}
-
 	if(lineIndex==scopeLineIndex){
 		scopeData1.clear();
 		for(int i=0;i<numSamples;i++){
@@ -779,14 +744,14 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			samplesForDisplay=line.luminance;
 			break;
 		case ColorDisplayMode::Db:
-			samplesForDisplay=isRedLine ? prevLineChroma : line.chrominance[0];
+			samplesForDisplay=line.chrominance[0];
 			break;
 		case ColorDisplayMode::Dr:
-			samplesForDisplay=isRedLine ? line.chrominance[0] : prevLineChroma;
+			samplesForDisplay=line.chrominance[1];
 			break;
 	}
-	float* crSamples=isRedLine ? line.chrominance[0] : prevLineChroma;
-	float* cbSamples=isRedLine ? prevLineChroma : line.chrominance[0];
+	float* cbSamples=line.chrominance[0];
+	float* crSamples=line.chrominance[1];
 
 	for(int x=0;x<bitmapWidth;x++){
 		float sampleIndex=std::clamp(x/(float)bitmapWidth*DEFAULT_LINE_DURATION, 0.0f, (float)DEFAULT_LINE_DURATION-2);
@@ -802,10 +767,10 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			float dr1=crSamples[(int)sampleIndex], dr2=crSamples[(int)sampleIndex+1];
 			float dr=dr2*k+dr1*(1.0f-k);
 			
-			float r=std::clamp(y-(10*dr/19), 0.0f, 1.0f);
-			float g=std::clamp(y+(2*(250*dr-209*db))/3363, 0.0f, 1.0f);
-			float b=std::clamp(y+(2*db/3), 0.0f, 1.0f);
-			
+			float r=std::clamp(y+1.403f*dr, 0.0f, 1.0f);
+			float g=std::clamp(y-0.344f*db-0.714f*dr, 0.0f, 1.0f);
+			float b=std::clamp(y+1.770f*db, 0.0f, 1.0f);
+
 			int ri=std::round(r*255);
 			int gi=std::round(g*255);
 			int bi=std::round(b*255);
@@ -861,10 +826,10 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 				float dr1=crSamples[(int)sampleIndex], dr2=crSamples[(int)sampleIndex+1];
 				float dr=dr2*k+dr1*(1.0f-k);
 				
-				float r=std::clamp(y-(10*dr/19), 0.0f, 1.0f);
-				float g=std::clamp(y+(2*(250*dr-209*db))/3363, 0.0f, 1.0f);
-				float b=std::clamp(y+(2*db/3), 0.0f, 1.0f);
-				
+				float r=std::clamp(y+1.403f*dr, 0.0f, 1.0f);
+				float g=std::clamp(y-0.344f*db-0.714f*dr, 0.0f, 1.0f);
+				float b=std::clamp(y+1.770f*db, 0.0f, 1.0f);
+
 				int ri=std::round(r*255);
 				int gi=std::round(g*255);
 				int bi=std::round(b*255);
@@ -872,8 +837,6 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			}
 		}
 	}
-	
-	memcpy(prevLineChroma, line.chrominance[0], sizeof(float)*DEFAULT_LINE_DURATION);
 }
 
 tgvoip::Buffer Decoder::getOutputFrame(){
@@ -997,4 +960,49 @@ void Decoder::ColorDecoderSECAM::demodulateSubcarrier(float *samples, SignalBuff
 	}
 	chromaDeemphasisFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
 	chromaLowpass.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
+}
+
+void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
+	for(int i=0;i<(field->isBottom ? 313 : 312);i++){
+		int lineIndex=i+(field->isBottom ? 312 : 0);
+		
+		VideoLine &line=field->lines[i];
+		bool isRedLine=(lineIndex+colorLineOffset)%2==0;
+		if((lineIndex>=6 && lineIndex<15) || (lineIndex>=319 && lineIndex<328)){
+			float centerSum=0;
+			float min=10;
+			float max=-10;
+			for(int j=150;j<250;j++){
+				centerSum+=line.chrominance[0][j];
+				min=std::min(line.chrominance[0][j], min);
+				max=std::max(line.chrominance[0][j], max);
+			}
+			float centerFreq=centerSum/100.0;
+			float maxSum=0;
+			for(int j=1000;j<1200;j++){
+				maxSum+=line.chrominance[0][j];
+			}
+			float maxFreq=maxSum/200.0;
+			float freqDiff=centerFreq-maxFreq;
+			if(centerFreq>3500000 && centerFreq<4500000 && fabsf(freqDiff)>270000.0f){
+				bool isActuallyRedLine=maxFreq>centerFreq;
+				if(isActuallyRedLine!=isRedLine){
+					colorLineOffset=colorLineOffset==1 ? 0 : 1;
+					isRedLine=isActuallyRedLine;
+				}
+			}
+		}
+		float centerFreq=isRedLine ? redCenterFreq : blueCenterFreq;
+		float maxDeviation=isRedLine ? redMaxDeviation : blueMaxDeviation;
+		int chrominanceIndex=isRedLine ? 1 : 0;
+		int prevLineChrominanceIndex=isRedLine ? 0 : 1;
+		float coeff=isRedLine ? -1.902f : 1.505f;
+		coeff*=1.3f; // Colors are over-saturated if I don't do this
+		for(int j=0;j<DEFAULT_LINE_DURATION;j++){
+			line.chrominance[chrominanceIndex][j]=std::clamp((line.chrominance[0][j]-centerFreq)/maxDeviation/coeff, -1.0f, 1.0f);
+		}
+		if(i>0){
+			memcpy(line.chrominance[prevLineChrominanceIndex], field->lines[i-1].chrominance[prevLineChrominanceIndex], DEFAULT_LINE_DURATION*sizeof(float));
+		}
+	}
 }
