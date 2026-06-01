@@ -100,6 +100,7 @@ private:
 	
 	void runDecoderThread();
 	std::vector<VideoLine> processField(VideoField* field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
+	void interpolateLine(VideoLine const& src, VideoLine const& dst, float leadingOffset, float trailingOffset, int leadingAlignDest, float trailingAlign);
 	void processLine(VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel);
 	void outputCapturedFrame();
 	VideoLine joinLines(VideoLine a, VideoLine b);
@@ -117,6 +118,7 @@ private:
 	float* prevLineChroma;
 	std::deque<VideoField*> fieldPool;
 	std::deque<VideoField*> fieldQueue;
+	VideoField *interpolatedField;
 	void* bitmapData;
 	unsigned int bitmapWidth, bitmapHeight, bitmapStride;
 	bool running=true;

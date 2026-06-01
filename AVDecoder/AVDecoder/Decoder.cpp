@@ -115,6 +115,13 @@ Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmap
 	
 	currentOutputBuffer=outputBufferPool.Get();
 	mainThreadRunLoop=CFRunLoopGetMain();
+	interpolatedField=new VideoField();
+	for(int i=0;i<625;i++){
+		VideoLine line;
+		line.setFrom(interpolatedField, DEFAULT_LINE_DURATION*i);
+		line.numSamples=DEFAULT_LINE_DURATION;
+		interpolatedField->lines.push_back(line);
+	}
 
 	decoderThread.SetName("Decoder");
 	decoderThread.Start();
@@ -122,6 +129,7 @@ Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmap
 
 Decoder::~Decoder(){
 	delete colorDecoder;
+	delete interpolatedField;
 }
 
 void Decoder::handleSampleData(uint8_t* samples, size_t count){
@@ -564,27 +572,90 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 		float defaultWhiteLevel=field->blackLevel+std::min((field->blackLevel-field->syncLevel)/whiteLevelRatio, 0.99f-field->blackLevel);
 		float whiteLevel=fieldsWithoutVITS>5 ? defaultWhiteLevel : detectedWhiteLevel;
 		fieldsWithoutVITS++;
-		for(int j=0;j<field->lines.size();j++){
-			int lineIndex=j+(field->isBottom ? 312 : 0);
-			if(lineIndex==16 || lineIndex==329){ // Try to sample white level from VITS signals transmitted by most channels
-				float sumForWhiteLevel=0;
-				int sampleCount=0;
-				VideoLine line=field->lines[j];
-				for(int k=120;k<line.numSamples;k++){
-					if(line.filteredLuminance[k]>defaultWhiteLevel){
-						sumForWhiteLevel+=line.filteredLuminance[k];
-						sampleCount++;
-					}
-				}
-				if(sampleCount>5){
-					detectedWhiteLevel=whiteLevel=sumForWhiteLevel/(float)sampleCount;
-					fieldsWithoutVITS=0;
+		// Try to sample white level from VITS signals transmitted by most channels
+		int vitsLineIndex=field->isBottom ? 17 : 16;
+		if(field->lines.size()>vitsLineIndex){
+			float sumForWhiteLevel=0;
+			int sampleCount=0;
+			VideoLine line=field->lines[vitsLineIndex];
+			for(int k=120;k<line.numSamples;k++){
+				if(line.filteredLuminance[k]>defaultWhiteLevel){
+					sumForWhiteLevel+=line.filteredLuminance[k];
+					sampleCount++;
 				}
 			}
-			if(lineIndex<625){
-				processLine(field->lines[j], lineIndex, field->syncLevel, field->blackLevel, whiteLevel);
+			if(sampleCount>5){
+				detectedWhiteLevel=whiteLevel=sumForWhiteLevel/(float)sampleCount;
+				fieldsWithoutVITS=0;
 			}
 		}
+		
+		// Precisely align lines relative to each other by offsetting and interpolating them such that the edges of the sync pulses either end of the line
+		// end up at exact known X coordinates in the framebuffer
+		float leadingThreshold=field->syncLevel+(field->blackLevel-field->syncLevel)*0.2f;
+		float trailingThreshold=field->syncLevel+(field->blackLevel-field->syncLevel)*0.6f;
+		float lineLeadingOffsets[field->lines.size()], lineTrailingOffsets[field->lines.size()], lineTrailingAlignPositions[field->lines.size()];
+		int lineLeadingAlignDestinations[field->lines.size()];
+		for(int j=0;j<field->lines.size();j++){
+			int lineIndex=j+(field->isBottom ? 312 : 0);
+			if(lineIndex<625){
+				VideoLine& line=field->lines[j];
+				int numSamples=line.numSamples;
+
+				float leadingOffset=0;
+				float trailingOffset=0;
+				float leadingAlign;
+				float trailingAlign;
+				int leadingAlignDest, trailingAlignDest;
+				if((lineIndex>4 && lineIndex<310) || (lineIndex>317 && lineIndex<623)){
+					// These lines contain field sync pulses, which are shorter than normal line sync
+					leadingAlignDest=LINE_LONG_SYNC_DURATION-LINE_SYNC_WINDOW+15;
+				}else{
+					leadingAlignDest=LINE_SYNC_DURATION-LINE_SYNC_WINDOW+15;
+				}
+				leadingAlign=numSamples*(leadingAlignDest/(float)DEFAULT_LINE_DURATION);
+				trailingAlignDest=DEFAULT_LINE_DURATION-12;
+				trailingAlign=numSamples*(trailingAlignDest/(float)DEFAULT_LINE_DURATION);
+				
+				// Find the rising edge of the leading sync pulse, going right to left
+				//      _______
+				// ____/ <----
+				for(int i=leadingAlign+15;i>std::max(1, (int)leadingAlign-30);i--){
+					float prevSample=line.luminance[i-1];
+					float curSample=line.luminance[i];
+					if(curSample>leadingThreshold && prevSample<=leadingThreshold){
+						leadingOffset=i-leadingAlign+(leadingThreshold-prevSample)/(curSample-prevSample);
+						break;
+					}
+				}
+				
+				// Find the falling edge of the trailing sync pulse, going left to right
+				// _____
+				// ---> \____
+				for(int i=trailingAlign-5;i<numSamples;i++){
+					float prevSample=line.luminance[i-1];
+					float curSample=line.luminance[i];
+					if(curSample<trailingThreshold && prevSample>=trailingThreshold){
+						trailingOffset=i-trailingAlign+(trailingThreshold-prevSample)/(curSample-prevSample);
+						break;
+					}
+				}
+				
+				lineLeadingOffsets[j]=leadingOffset;
+				lineTrailingOffsets[j]=trailingOffset;
+				lineTrailingAlignPositions[j]=trailingAlign;
+				lineLeadingAlignDestinations[j]=leadingAlignDest;
+			}
+		}
+		
+		for(int j=0;j<field->lines.size();j++){
+			int lineIndex=j+(field->isBottom ? 312 : 0);
+			if(lineIndex<625){
+				interpolateLine(field->lines[j], interpolatedField->lines[j], lineLeadingOffsets[j], lineTrailingOffsets[j], lineLeadingAlignDestinations[j], lineTrailingAlignPositions[j]);
+				processLine(interpolatedField->lines[j], lineIndex, field->syncLevel, field->blackLevel, whiteLevel);
+			}
+		}
+
 		if(vbiDataCallback && field->lines.size()>32){
 			uint8_t vbiData[DEFAULT_LINE_DURATION*16];
 			int offset=0;
@@ -598,6 +669,7 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 			}
 			vbiDataCallback(vbiData, DEFAULT_LINE_DURATION*16);
 		}
+		
 		if(field->isBottom && outputEnabled){
 			outputCapturedFrame();
 		}
@@ -606,6 +678,33 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 	}
 
 	return lines;
+}
+
+void interpolateVector(float *src, float *indexes, int unused1, float *dst, int unused2, int dstLen, int srcLen){
+	for(int x=0;x<dstLen;x++){
+		float sampleIndex=indexes[x];
+		float k=sampleIndex-(int)sampleIndex;
+		
+		float sample1Y=src[((int)sampleIndex)];
+		float sample2Y=src[(int)sampleIndex+1];
+		dst[x]=sample2Y*k+sample1Y*(1.0f-k);
+	}
+}
+
+void Decoder::interpolateLine(VideoLine const& src, VideoLine const& dst, float leadingOffset, float trailingOffset, int leadingAlignDest, float trailingAlign){
+	float interpolationIndexes[DEFAULT_LINE_DURATION];
+	
+	for(int x=0;x<DEFAULT_LINE_DURATION;x++){
+		float sampleOffsetK=std::clamp((x-leadingAlignDest)/(float)trailingAlign, 0.0f, 1.0f);
+		float sampleOffset=trailingOffset*sampleOffsetK+leadingOffset*(1.0f-sampleOffsetK);
+		interpolationIndexes[x]=std::clamp(x/(float)DEFAULT_LINE_DURATION*src.numSamples+sampleOffset, 0.0f, (float)src.numSamples-1);
+	}
+	vDSP_vlint(src.luminance, interpolationIndexes, 1, dst.luminance, 1, DEFAULT_LINE_DURATION, src.numSamples);
+	vDSP_vlint(src.chrominance[0], interpolationIndexes, 1, dst.chrominance[0], 1, DEFAULT_LINE_DURATION, src.numSamples);
+	vDSP_vlint(src.chrominance[1], interpolationIndexes, 1, dst.chrominance[1], 1, DEFAULT_LINE_DURATION, src.numSamples);
+	if(colorMode==ColorDisplayMode::Raw){
+		vDSP_vlint(src.raw, interpolationIndexes, 1, dst.raw, 1, DEFAULT_LINE_DURATION, src.numSamples);
+	}
 }
 
 void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float blackLevel, float whiteLevel){
@@ -647,89 +746,19 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 	}
 	float centerFreq=isRedLine ? redCenterFreq : blueCenterFreq;
 	float maxDeviation=isRedLine ? redMaxDeviation : blueMaxDeviation;
-	for(int i=0;i<numSamples;i++){
+	for(int i=0;i<DEFAULT_LINE_DURATION;i++){
 		line.chrominance[0][i]=std::clamp((line.chrominance[0][i]-centerFreq)/maxDeviation, -1.0f, 1.0f);
-	}
-
-	// Precisely align lines relative to each other by offsetting and interpolating them such that the edges of the sync pulses either end of the line
-	// end up at exact known X coordinates in the framebuffer
-	float leadingOffset=0;
-	float trailingOffset=0;
-	float leadingAlign;
-	float trailingAlign;
-	float leadingThreshold=syncLevel+(blackLevel-syncLevel)*0.2f;
-	float trailingThreshold=syncLevel+(blackLevel-syncLevel)*0.7f;
-	int leadingAlignDest, trailingAlignDest;
-	if((lineIndex>4 && lineIndex<310) || (lineIndex>317 && lineIndex<623)){
-		// These lines contain field sync pulses, which are shorter than normal line sync
-		leadingAlignDest=LINE_LONG_SYNC_DURATION-LINE_SYNC_WINDOW+15;
-		leadingAlign=numSamples*(leadingAlignDest/(float)DEFAULT_LINE_DURATION);
-	}else{
-		leadingAlignDest=LINE_SYNC_DURATION-LINE_SYNC_WINDOW+15;
-		leadingAlign=numSamples*(leadingAlignDest/(float)DEFAULT_LINE_DURATION);
-	}
-	trailingAlignDest=DEFAULT_LINE_DURATION-12;
-	trailingAlign=numSamples*(trailingAlignDest/(float)DEFAULT_LINE_DURATION);
-	
-	// Find the rising edge of the leading sync pulse, going right to left
-	//      _______
-	// ____/ <----
-	for(int i=leadingAlign+15;i>std::max(1, (int)leadingAlign-30);i--){
-		float prevSample=line.luminance[i-1];
-		float curSample=line.luminance[i];
-		if(curSample>leadingThreshold && prevSample<=leadingThreshold){
-			leadingOffset=i-leadingAlign+(leadingThreshold-prevSample)/(curSample-prevSample);
-			break;
-		}
-	}
-	
-	// Find the falling edge of the trailing sync pulse, going left to right
-	// _____
-	// ---> \____
-	for(int i=trailingAlign-5;i<numSamples;i++){
-		float prevSample=line.luminance[i-1];
-		float curSample=line.luminance[i];
-		if(curSample<trailingThreshold && prevSample>=trailingThreshold){
-			trailingOffset=i-trailingAlign+(trailingThreshold-prevSample)/(curSample-prevSample);
-			break;
-		}
-	}
-	
-	float interpolatedLuminance[DEFAULT_LINE_DURATION];
-	float interpolatedChrominance[DEFAULT_LINE_DURATION];
-	
-	for(int x=0;x<DEFAULT_LINE_DURATION;x++){
-		float sampleOffsetK=std::clamp((x-leadingAlignDest)/(float)trailingAlign, 0.0f, 1.0f);
-		float sampleOffset=trailingOffset*sampleOffsetK+leadingOffset*(1.0f-sampleOffsetK);
-		float sampleIndex=std::clamp(x/(float)DEFAULT_LINE_DURATION*numSamples+sampleOffset, 0.0f, (float)numSamples-2);
-		float k=sampleIndex-(int)sampleIndex;
-
-		float sample1Y=line.luminance[((int)sampleIndex)];
-		float sample2Y=line.luminance[(int)sampleIndex+1];
-		interpolatedLuminance[x]=sample2Y*k+sample1Y*(1.0f-k);
-		
-		float sample1C=line.chrominance[0][((int)sampleIndex)];
-		float sample2C=line.chrominance[0][(int)sampleIndex+1];
-		interpolatedChrominance[x]=sample2C*k+sample1C*(1.0f-k);
-	}
-	
-	if(colorMode==ColorDisplayMode::Raw && numSamples<DEFAULT_LINE_DURATION){
-		for(int i=numSamples;i<DEFAULT_LINE_DURATION;i++){
-			line.raw[i]=0;
-		}
 	}
 
 	if(lineIndex==scopeLineIndex){
 		scopeData1.clear();
 		for(int i=0;i<numSamples;i++){
-			/*float v=line.luminance[i];
-			scopeData1.push_back((float)v);*/
-			float v=line.chrominance[0][i];
-			scopeData1.push_back((float)v/2+0.5);
+			float v=line.luminance[i];
+			scopeData1.push_back((float)v);
 		}
 		scopeData2.clear();
 		for(int i=0;i<numSamples;i++){
-			float v=line.chrominance[1][i];
+			float v=line.chrominance[0][i];
 			scopeData2.push_back((float)v/2+0.5);
 		}
 		scopeLines.clear();
@@ -739,34 +768,28 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 	}
 
 	float* samplesForDisplay;
-	int numSamplesForDisplay;
 	switch(colorMode){
 		case ColorDisplayMode::Full:
-			samplesForDisplay=interpolatedLuminance;
-			numSamplesForDisplay=DEFAULT_LINE_DURATION;
+			samplesForDisplay=line.luminance;
 			break;
 		case ColorDisplayMode::Raw:
 			samplesForDisplay=line.raw;
-			numSamplesForDisplay=numSamples;
 			break;
 		case ColorDisplayMode::Y:
-			samplesForDisplay=interpolatedLuminance;
-			numSamplesForDisplay=DEFAULT_LINE_DURATION;
+			samplesForDisplay=line.luminance;
 			break;
 		case ColorDisplayMode::Db:
-			samplesForDisplay=isRedLine ? prevLineChroma : interpolatedChrominance;
-			numSamplesForDisplay=DEFAULT_LINE_DURATION;
+			samplesForDisplay=isRedLine ? prevLineChroma : line.chrominance[0];
 			break;
 		case ColorDisplayMode::Dr:
-			samplesForDisplay=isRedLine ? interpolatedChrominance : prevLineChroma;
-			numSamplesForDisplay=DEFAULT_LINE_DURATION;
+			samplesForDisplay=isRedLine ? line.chrominance[0] : prevLineChroma;
 			break;
 	}
-	float* crSamples=isRedLine ? interpolatedChrominance : prevLineChroma;
-	float* cbSamples=isRedLine ? prevLineChroma : interpolatedChrominance;
+	float* crSamples=isRedLine ? line.chrominance[0] : prevLineChroma;
+	float* cbSamples=isRedLine ? prevLineChroma : line.chrominance[0];
 
 	for(int x=0;x<bitmapWidth;x++){
-		float sampleIndex=std::clamp(x/(float)bitmapWidth*numSamplesForDisplay, 0.0f, (float)numSamplesForDisplay-2);
+		float sampleIndex=std::clamp(x/(float)bitmapWidth*DEFAULT_LINE_DURATION, 0.0f, (float)DEFAULT_LINE_DURATION-2);
 		float sample1=samplesForDisplay[((int)sampleIndex)];
 		float sample2=samplesForDisplay[(int)sampleIndex+1];
 		float k=sampleIndex-(int)sampleIndex;
@@ -828,8 +851,8 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			uint32_t *outputLine=((uint32_t*)*currentOutputBuffer)+(y*outputWidth);
 			for(int x=0;x<outputWidth;x++){
 				float sampleIndex=std::clamp(x/(float)outputWidth*lineLength, 0.0f, (float)lineLength-2)+lineStartOffset;
-				float sample1=interpolatedLuminance[((int)sampleIndex)];
-				float sample2=interpolatedLuminance[(int)sampleIndex+1];
+				float sample1=line.luminance[((int)sampleIndex)];
+				float sample2=line.luminance[(int)sampleIndex+1];
 				float k=sampleIndex-(int)sampleIndex;
 				float interpolatedSample=sample2*k+sample1*(1.0f-k);
 				float y=(interpolatedSample-blackLevel)/visibleBrightnessRange;
@@ -850,7 +873,7 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 		}
 	}
 	
-	memcpy(prevLineChroma, interpolatedChrominance, sizeof(float)*DEFAULT_LINE_DURATION);
+	memcpy(prevLineChroma, line.chrominance[0], sizeof(float)*DEFAULT_LINE_DURATION);
 }
 
 tgvoip::Buffer Decoder::getOutputFrame(){
