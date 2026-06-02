@@ -53,6 +53,9 @@ private:
 	bool running=false;
 	uint8_t* buffer;
 	uint32_t callbackCount=0;
+	uint64_t prevCallbackEndTime;
+	uint64_t totalSamples=0;
+	uint64_t startTime;
 };
 
 #endif /* SignalSource_hpp */

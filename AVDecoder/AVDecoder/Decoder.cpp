@@ -650,24 +650,6 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 			int lineIndex=j+(field->isBottom ? 312 : 0);
 			if(lineIndex<625){
 				interpolateLine(field->lines[j], interpolatedField->lines[j], lineLeadingOffsets[j], lineTrailingOffsets[j], lineLeadingAlignDestinations[j], lineTrailingAlignPositions[j]);
-
-				if(lineIndex==scopeLineIndex){
-					scopeData1.clear();
-					VideoLine &line=field->lines[j];
-					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
-						float v=line.luminance[i];
-						scopeData1.push_back((float)v);
-					}
-					scopeData2.clear();
-					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
-						float v=line.chrominance[1][i];
-						scopeData2.push_back((float)v);
-					}
-					scopeLines.clear();
-					scopeLines.push_back(syncLevel);
-					scopeLines.push_back(blackLevel);
-					scopeLines.push_back(whiteLevel);
-				}
 			}
 		}
 		
@@ -678,6 +660,23 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 			int lineIndex=j+(field->isBottom ? 312 : 0);
 			if(lineIndex<625){
 				processLine(interpolatedField->lines[j], lineIndex, field->syncLevel, field->blackLevel, whiteLevel);
+				if(lineIndex==scopeLineIndex){
+					scopeData1.clear();
+					VideoLine &line=interpolatedField->lines[j];
+					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
+						float v=line.luminance[i];
+						scopeData1.push_back((float)v);
+					}
+					scopeData2.clear();
+					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
+						float v=line.chrominance[0][i];
+						scopeData2.push_back((float)v/2.0f+0.5f);
+					}
+					scopeLines.clear();
+					scopeLines.push_back(syncLevel);
+					scopeLines.push_back(blackLevel);
+					scopeLines.push_back(whiteLevel);
+				}
 			}
 		}
 

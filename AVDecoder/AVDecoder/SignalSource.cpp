@@ -133,8 +133,10 @@ void FileSignalSource::stop(){
 }
 
 void FileSignalSource::runThread(){
+	startTime=prevCallbackEndTime=clock_gettime_nsec_np(CLOCK_MONOTONIC);
 	auto writeCb=[](const FLAC__StreamDecoder *decoder, const FLAC__Frame *frame, const FLAC__int32 *const buffer[], void *clientData)->FLAC__StreamDecoderWriteStatus{
 		FileSignalSource* s=(FileSignalSource*)clientData;
+		//s->totalSamples+=frame->header.blocksize;
 		if(frame->header.blocksize!=4096){
 			printf("Unexpected frame size %u\n", frame->header.blocksize);
 			return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
@@ -146,7 +148,12 @@ void FileSignalSource::runThread(){
 		s->callbackCount=(s->callbackCount+1)%128;
 		if(s->callbackCount==0){
 			s->callback(s->buffer, BUFFER_SIZE);
-			usleep(BUFFER_SIZE/20); // 20 samples per microsecond
+			uint64_t now=clock_gettime_nsec_np(CLOCK_MONOTONIC);
+			double usSinceLastCallback=(now-s->prevCallbackEndTime)/1000.0;
+			int usToSleep=floor(BUFFER_SIZE/20.0-usSinceLastCallback);
+			s->prevCallbackEndTime=now+(BUFFER_SIZE/20.0-usSinceLastCallback)*1000;
+			usleep(usToSleep);
+			//printf("avg semple rate: %f\n", s->totalSamples/((double)(now-s->startTime)/1000000000.0));
 		}
 		return s->running ? FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE : FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
 	};
