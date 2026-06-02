@@ -56,6 +56,7 @@
 
 @property (strong) IBOutlet NSSlider *whiteLevelSlider;
 @property (strong) IBOutlet NSSlider *signalOffsetSlider;
+@property (strong) IBOutlet NSButton *colorArtifactFilterCheckbox;
 
 @property (strong) IBOutlet NSSegmentedControl *colorModeSelector;
 @property (strong) IBOutlet NSSegmentedControl *levelsModeSelector;
@@ -560,6 +561,13 @@ void runLoopCallback(void *info){
 	ADCSignalSource *adcSource=dynamic_cast<ADCSignalSource*>(source);
 	if(adcSource){
 		adcSource->offset=_signalOffsetSlider.intValue;
+	}
+}
+
+- (IBAction)onColorArtifactFilterClick:(id)sender{
+	Decoder::ColorDecoderSECAM *colorDecoder=dynamic_cast<Decoder::ColorDecoderSECAM*>(decoder->colorDecoder);
+	if(colorDecoder){
+		colorDecoder->colorArtifactFilterEnabled=_colorArtifactFilterCheckbox.state==NSControlStateValueOn;
 	}
 }
 

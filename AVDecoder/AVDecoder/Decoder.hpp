@@ -72,7 +72,6 @@ public:
 			};
 		}
 	};
-private:
 	
 	class ColorDecoder{
 	public:
@@ -89,11 +88,13 @@ private:
 		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer);
 		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf);
 		virtual void decodeColor(VideoField *field);
+		bool colorArtifactFilterEnabled=true;
 	private:
 		FIRFilter chromaSeparationFilter;
 		BiquadFilter chromaDeemphasisFilter;
 		float *samples;
 		float *subcarrier;
+		float *prevFieldChrominance[2];
 		HilbertTransform hilbertTransform;
 		
 		static constexpr float redCenterFreq=4406000;
@@ -102,7 +103,9 @@ private:
 		static constexpr float blueMaxDeviation=230000;
 		int colorLineOffset=0;
 	};
-	
+	ColorDecoder *colorDecoder;
+
+private:
 	void runDecoderThread();
 	std::vector<VideoLine> processField(VideoField* field, std::vector<SyncPulse> sync, float syncLevel, float blackLevel, float visibleBrightnessRange, bool isBottom);
 	void interpolateLine(VideoLine const& src, VideoLine const& dst, float leadingOffset, float trailingOffset, int leadingAlignDest, float trailingAlign);
@@ -118,7 +121,6 @@ private:
 	tgvoip::BufferPool<942*625*4, 10> outputBufferPool;
 	tgvoip::BlockingQueue<tgvoip::Buffer> outputQueue=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
-	ColorDecoder *colorDecoder;
 	
 	std::deque<VideoField*> fieldPool;
 	std::deque<VideoField*> fieldQueue;

@@ -18,6 +18,7 @@
                 <outlet property="audioDeviceDropdown" destination="4YJ-lF-Oze" id="kYe-RG-74P"/>
                 <outlet property="audioVolumeSlider" destination="QYH-El-CR3" id="1ll-yb-XFv"/>
                 <outlet property="bitmapView" destination="YA1-Zu-V1a" id="fhu-eh-kNf"/>
+                <outlet property="colorArtifactFilterCheckbox" destination="akh-FV-C7c" id="gBf-mE-fs3"/>
                 <outlet property="colorModeSelector" destination="riz-W8-6DK" id="e1K-Ht-9Hl"/>
                 <outlet property="fieldDisplaySelector" destination="IOs-qC-2X4" id="edf-lY-0vM"/>
                 <outlet property="includeBlankingIntervalsCheckbox" destination="L0N-1J-hsI" id="AJX-iV-yam"/>
@@ -726,16 +727,8 @@
                     <stackView distribution="fill" orientation="vertical" alignment="leading" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="vdU-PS-UFm">
                         <rect key="frame" x="952" y="49" width="250" height="667"/>
                         <subviews>
-                            <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="ebs-Q1-Wj5">
-                                <rect key="frame" x="-2" y="651" width="92" height="16"/>
-                                <textFieldCell key="cell" lineBreakMode="clipping" title="Signal source" id="YaS-fP-zBl">
-                                    <font key="font" textStyle="headline" name=".SFNS-Bold"/>
-                                    <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
-                                    <color key="backgroundColor" name="textBackgroundColor" catalog="System" colorSpace="catalog"/>
-                                </textFieldCell>
-                            </textField>
                             <stackView distribution="fillEqually" orientation="horizontal" alignment="top" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bWj-pG-Dgw">
-                                <rect key="frame" x="0.0" y="623" width="250" height="20"/>
+                                <rect key="frame" x="0.0" y="647" width="250" height="20"/>
                                 <subviews>
                                     <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Vph-CO-qfU">
                                         <rect key="frame" x="-7" y="-7" width="135" height="32"/>
@@ -768,7 +761,7 @@
                                 </customSpacing>
                             </stackView>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="SVQ-QB-DDz">
-                                <rect key="frame" x="-7" y="588" width="264" height="32"/>
+                                <rect key="frame" x="-7" y="612" width="264" height="32"/>
                                 <buttonCell key="cell" type="push" title="Stop" bezelStyle="rounded" alignment="center" enabled="NO" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="A8f-MM-MAh">
                                     <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                     <font key="font" metaFont="system"/>
@@ -778,7 +771,7 @@
                                 </connections>
                             </button>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="TzN-WC-HfV">
-                                <rect key="frame" x="-2" y="571" width="75" height="16"/>
+                                <rect key="frame" x="-2" y="595" width="75" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="White level:" id="blq-It-3DC">
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -786,7 +779,7 @@
                                 </textFieldCell>
                             </textField>
                             <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="KC4-Xj-IEA">
-                                <rect key="frame" x="-2" y="537" width="254" height="28"/>
+                                <rect key="frame" x="-2" y="561" width="254" height="28"/>
                                 <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="100" tickMarkPosition="above" numberOfTickMarks="5" sliderType="linear" id="WHU-P7-rO2">
                                     <font key="font" size="12" name="Helvetica"/>
                                 </sliderCell>
@@ -795,7 +788,7 @@
                                 </connections>
                             </slider>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="LSn-qv-wAO">
-                                <rect key="frame" x="-2" y="519" width="84" height="16"/>
+                                <rect key="frame" x="-2" y="543" width="84" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="Signal offset:" id="yc1-ux-tMT">
                                     <font key="font" metaFont="system"/>
                                     <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
@@ -803,7 +796,7 @@
                                 </textFieldCell>
                             </textField>
                             <slider verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="0xk-lP-1Ko">
-                                <rect key="frame" x="-2" y="485" width="254" height="28"/>
+                                <rect key="frame" x="-2" y="509" width="254" height="28"/>
                                 <sliderCell key="cell" continuous="YES" state="on" alignment="left" maxValue="255" doubleValue="15" tickMarkPosition="above" numberOfTickMarks="5" sliderType="linear" id="qCf-jM-ESX">
                                     <font key="font" size="12" name="Helvetica"/>
                                 </sliderCell>
@@ -811,6 +804,16 @@
                                     <action selector="updateSignalOffset:" target="Voe-Tx-rLC" id="Yj4-iW-i8A"/>
                                 </connections>
                             </slider>
+                            <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="akh-FV-C7c">
+                                <rect key="frame" x="-2" y="490" width="160" height="18"/>
+                                <buttonCell key="cell" type="check" title="Reduce color artifacts" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="Vr4-8a-ESV">
+                                    <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                                    <font key="font" metaFont="system"/>
+                                </buttonCell>
+                                <connections>
+                                    <action selector="onColorArtifactFilterClick:" target="Voe-Tx-rLC" id="6GV-ZM-g6c"/>
+                                </connections>
+                            </button>
                             <box verticalHuggingPriority="750" boxType="separator" translatesAutoresizingMaskIntoConstraints="NO" id="hmn-1i-ymT">
                                 <rect key="frame" x="0.0" y="480" width="250" height="5"/>
                             </box>

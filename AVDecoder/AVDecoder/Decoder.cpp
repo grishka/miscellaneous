@@ -650,6 +650,24 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 			int lineIndex=j+(field->isBottom ? 312 : 0);
 			if(lineIndex<625){
 				interpolateLine(field->lines[j], interpolatedField->lines[j], lineLeadingOffsets[j], lineTrailingOffsets[j], lineLeadingAlignDestinations[j], lineTrailingAlignPositions[j]);
+
+				if(lineIndex==scopeLineIndex){
+					scopeData1.clear();
+					VideoLine &line=field->lines[j];
+					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
+						float v=line.luminance[i];
+						scopeData1.push_back((float)v);
+					}
+					scopeData2.clear();
+					for(int i=0;i<DEFAULT_LINE_DURATION;i++){
+						float v=line.chrominance[1][i];
+						scopeData2.push_back((float)v);
+					}
+					scopeLines.clear();
+					scopeLines.push_back(syncLevel);
+					scopeLines.push_back(blackLevel);
+					scopeLines.push_back(whiteLevel);
+				}
 			}
 		}
 		
@@ -714,23 +732,6 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 		bitmapLine=bitmapPixels+((lineIndex)*bitmapStride);
 	else
 		bitmapLine=bitmapPixels+((lineIndex*2%bitmapHeight)*bitmapStride);
-
-	if(lineIndex==scopeLineIndex){
-		scopeData1.clear();
-		for(int i=0;i<numSamples;i++){
-			float v=line.luminance[i];
-			scopeData1.push_back((float)v);
-		}
-		scopeData2.clear();
-		for(int i=0;i<numSamples;i++){
-			float v=line.chrominance[0][i];
-			scopeData2.push_back((float)v/2+0.5);
-		}
-		scopeLines.clear();
-		scopeLines.push_back(syncLevel);
-		scopeLines.push_back(blackLevel);
-		scopeLines.push_back(whiteLevel);
-	}
 
 	float* samplesForDisplay;
 	switch(colorMode){
@@ -925,11 +926,15 @@ Decoder::ColorDecoderSECAM::ColorDecoderSECAM():chromaSeparationFilter({
 	const int filterSize=chromaSeparationFilter.getSize();
 	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
 	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
+	prevFieldChrominance[0]=(float*)calloc(DEFAULT_LINE_DURATION*313, sizeof(float));
+	prevFieldChrominance[1]=(float*)calloc(DEFAULT_LINE_DURATION*313, sizeof(float));
 }
 
 Decoder::ColorDecoderSECAM::~ColorDecoderSECAM(){
 	free(samples);
 	free(subcarrier);
+	free(prevFieldChrominance[0]);
+	free(prevFieldChrominance[1]);
 }
 	
 float *Decoder::ColorDecoderSECAM::separateSubcarrier(float *rawSignal, float *nextBuffer){
@@ -957,12 +962,14 @@ void Decoder::ColorDecoderSECAM::demodulateSubcarrier(float *samples, SignalBuff
 
 		float angle=atan2f(im, re);
 		buf->chrominance[0][i]=std::clamp(angle*gain, 3400000.0f, 4600000.0f);
+		buf->chrominance[1][i]=hypotf(a, -b);
 	}
 	chromaDeemphasisFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
 	chromaLowpass.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
 }
 
 void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
+	float subcarrierAmplitudeThreshold=0.025f;
 	for(int i=0;i<(field->isBottom ? 313 : 312);i++){
 		int lineIndex=i+(field->isBottom ? 312 : 0);
 		
@@ -998,11 +1005,30 @@ void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
 		int prevLineChrominanceIndex=isRedLine ? 0 : 1;
 		float coeff=isRedLine ? -1.902f : 1.505f;
 		coeff*=1.3f; // Colors are over-saturated if I don't do this
-		for(int j=0;j<DEFAULT_LINE_DURATION;j++){
-			line.chrominance[chrominanceIndex][j]=std::clamp((line.chrominance[0][j]-centerFreq)/maxDeviation/coeff, -1.0f, 1.0f);
+		if(colorArtifactFilterEnabled){
+			int remainingBadChromaSamples=0;
+			for(int j=0;j<DEFAULT_LINE_DURATION;j++){
+				if(line.chrominance[1][j]<subcarrierAmplitudeThreshold && j>=197 && j<DEFAULT_LINE_DURATION-40 && i>=22 && i<310){
+					line.chrominance[chrominanceIndex][j]=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*i+j];
+					remainingBadChromaSamples=50;
+				}else if(remainingBadChromaSamples>0){
+					remainingBadChromaSamples--;
+					line.chrominance[chrominanceIndex][j]=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*i+j];
+				}else{
+					line.chrominance[chrominanceIndex][j]=std::clamp((line.chrominance[0][j]-centerFreq)/maxDeviation/coeff, -1.0f, 1.0f);
+				}
+			}
+		}else{
+			for(int j=0;j<DEFAULT_LINE_DURATION;j++){
+				line.chrominance[chrominanceIndex][j]=std::clamp((line.chrominance[0][j]-centerFreq)/maxDeviation/coeff, -1.0f, 1.0f);
+			}
 		}
 		if(i>0){
 			memcpy(line.chrominance[prevLineChrominanceIndex], field->lines[i-1].chrominance[prevLineChrominanceIndex], DEFAULT_LINE_DURATION*sizeof(float));
 		}
+	}
+	if(colorArtifactFilterEnabled){
+		memcpy(prevFieldChrominance[0], field->chrominance[0], DEFAULT_LINE_DURATION*313*sizeof(float));
+		memcpy(prevFieldChrominance[1], field->chrominance[1], DEFAULT_LINE_DURATION*313*sizeof(float));
 	}
 }

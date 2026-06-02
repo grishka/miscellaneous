@@ -2431,6 +2431,24 @@
         }
       }
     },
+    "Vr4-8a-ESV.title" : {
+      "comment" : "Class = \"NSButtonCell\"; title = \"Reduce color artifacts\"; ObjectID = \"Vr4-8a-ESV\";",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reduce color artifacts"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтр цветовых артефактов"
+          }
+        }
+      }
+    },
     "VrI-KF-2c2.title" : {
       "comment" : "Class = \"NSTextFieldCell\"; title = \"Recording\"; ObjectID = \"VrI-KF-2c2\";",
       "extractionState" : "extracted_with_value",
@@ -2661,24 +2679,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Find…"
-          }
-        }
-      }
-    },
-    "YaS-fP-zBl.title" : {
-      "comment" : "Class = \"NSTextFieldCell\"; title = \"Signal source\"; ObjectID = \"YaS-fP-zBl\";",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Signal source"
-          }
-        },
-        "ru" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Источник сигнала"
           }
         }
       }
