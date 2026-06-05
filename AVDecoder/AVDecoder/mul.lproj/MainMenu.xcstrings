@@ -2629,6 +2629,30 @@
         }
       }
     },
+    "XmJ-91-66g.ibShadowedLabels[0]" : {
+      "comment" : "Class = \"NSSegmentedCell\"; XmJ-91-66g.ibShadowedLabels[0] = \"SECAM\"; ObjectID = \"XmJ-91-66g\";",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "SECAM"
+          }
+        }
+      }
+    },
+    "XmJ-91-66g.ibShadowedLabels[1]" : {
+      "comment" : "Class = \"NSSegmentedCell\"; XmJ-91-66g.ibShadowedLabels[1] = \"PAL\"; ObjectID = \"XmJ-91-66g\";",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PAL"
+          }
+        }
+      }
+    },
     "xQD-1f-W4t.title" : {
       "comment" : "Class = \"NSMenuItem\"; title = \"Use All\"; ObjectID = \"xQD-1f-W4t\";",
       "extractionState" : "extracted_with_value",

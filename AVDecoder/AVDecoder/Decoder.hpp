@@ -42,12 +42,14 @@ class SignalBuffers;
 
 class Decoder{
 public:
+	class ColorDecoder;
 	Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmapHeight, unsigned int bitmapStride, CFRunLoopSourceRef runLoopSource);
 	~Decoder();
 	void handleSampleData(uint8_t* samples, size_t count);
 	tgvoip::Buffer getOutputFrame();
 	void startOutput();
 	void stopOutput();
+	void replaceColorDecoder(ColorDecoder *newColorDecoder);
 	
 	ColorDisplayMode colorMode=ColorDisplayMode::Full;
 	DisplayLevelsMode levelsMode=DisplayLevelsMode::Auto;
@@ -60,7 +62,8 @@ public:
 	int scopeLineIndex=16;
 	float whiteLevelRatio=0.43; // ratio between sync to black and black to white
 	std::function<void(uint8_t*, size_t)> vbiDataCallback;
-	
+	ColorDecoder *colorDecoder;
+
 	struct SyncPulse{
 		int location;
 		int length;
@@ -103,7 +106,25 @@ public:
 		static constexpr float blueMaxDeviation=230000;
 		int colorLineOffset=0;
 	};
-	ColorDecoder *colorDecoder;
+	
+	class ColorDecoderPAL: public ColorDecoder{
+	public:
+		ColorDecoderPAL();
+		virtual ~ColorDecoderPAL();
+		virtual float *separateSubcarrier(float *rawSignal, float *nextBuffer);
+		virtual void demodulateSubcarrier(float *samples, SignalBuffers *buf);
+		virtual void decodeColor(VideoField *field);
+	private:
+		FIRFilter chromaSeparationFilter;
+		BiquadFilter phaseLowpassFilter;
+		BiquadFilter phaseLowpassFilter2;
+		float *samples;
+		float *subcarrier;
+		float *prevRawSignal;
+		int sampleCount=0;
+		float sinLUT[2048];
+		float cosLUT[2048];
+	};
 
 private:
 	void runDecoderThread();
@@ -121,6 +142,7 @@ private:
 	tgvoip::BufferPool<942*625*4, 10> outputBufferPool;
 	tgvoip::BlockingQueue<tgvoip::Buffer> outputQueue=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
+	tgvoip::Mutex colorDecoderMutex;
 	
 	std::deque<VideoField*> fieldPool;
 	std::deque<VideoField*> fieldQueue;
@@ -139,7 +161,7 @@ private:
 	int fieldsWithoutVITS=10;
 	
 	BiquadFilter *chromaLowpassFilter;
-	
+
 	int frameCount=0;
 	uint64_t lastFrameTime;
 	

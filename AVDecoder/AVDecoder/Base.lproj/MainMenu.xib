@@ -20,6 +20,7 @@
                 <outlet property="bitmapView" destination="YA1-Zu-V1a" id="fhu-eh-kNf"/>
                 <outlet property="colorArtifactFilterCheckbox" destination="akh-FV-C7c" id="gBf-mE-fs3"/>
                 <outlet property="colorModeSelector" destination="riz-W8-6DK" id="e1K-Ht-9Hl"/>
+                <outlet property="colorStandardSelector" destination="e0T-Ry-u9M" id="4F4-ms-lzj"/>
                 <outlet property="fieldDisplaySelector" destination="IOs-qC-2X4" id="edf-lY-0vM"/>
                 <outlet property="includeBlankingIntervalsCheckbox" destination="L0N-1J-hsI" id="AJX-iV-yam"/>
                 <outlet property="levelsModeSelector" destination="zf2-Uf-Ibb" id="plq-jG-bds"/>
@@ -725,10 +726,10 @@
                         </constraints>
                     </customView>
                     <stackView distribution="fill" orientation="vertical" alignment="leading" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="vdU-PS-UFm">
-                        <rect key="frame" x="952" y="49" width="250" height="667"/>
+                        <rect key="frame" x="952" y="19" width="250" height="697"/>
                         <subviews>
                             <stackView distribution="fillEqually" orientation="horizontal" alignment="top" horizontalStackHuggingPriority="249.99998474121094" verticalStackHuggingPriority="249.99998474121094" detachesHiddenViews="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bWj-pG-Dgw">
-                                <rect key="frame" x="0.0" y="647" width="250" height="20"/>
+                                <rect key="frame" x="0.0" y="677" width="250" height="20"/>
                                 <subviews>
                                     <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="Vph-CO-qfU">
                                         <rect key="frame" x="-7" y="-7" width="135" height="32"/>
@@ -761,7 +762,7 @@
                                 </customSpacing>
                             </stackView>
                             <button verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="SVQ-QB-DDz">
-                                <rect key="frame" x="-7" y="612" width="264" height="32"/>
+                                <rect key="frame" x="-7" y="642" width="264" height="32"/>
                                 <buttonCell key="cell" type="push" title="Stop" bezelStyle="rounded" alignment="center" enabled="NO" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="A8f-MM-MAh">
                                     <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
                                     <font key="font" metaFont="system"/>
@@ -770,6 +771,19 @@
                                     <action selector="onStopSourceClick:" target="Voe-Tx-rLC" id="CAE-5F-QCY"/>
                                 </connections>
                             </button>
+                            <segmentedControl verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="e0T-Ry-u9M">
+                                <rect key="frame" x="-2" y="618" width="254" height="24"/>
+                                <segmentedCell key="cell" borderStyle="border" alignment="left" style="rounded" trackingMode="selectOne" id="XmJ-91-66g">
+                                    <font key="font" metaFont="system"/>
+                                    <segments>
+                                        <segment label="SECAM" width="123" selected="YES"/>
+                                        <segment label="PAL" width="122" tag="1"/>
+                                    </segments>
+                                </segmentedCell>
+                                <connections>
+                                    <action selector="onColorStandardSelectorClick:" target="Voe-Tx-rLC" id="T81-9h-5i6"/>
+                                </connections>
+                            </segmentedControl>
                             <textField focusRingType="none" horizontalHuggingPriority="251" verticalHuggingPriority="750" translatesAutoresizingMaskIntoConstraints="NO" id="TzN-WC-HfV">
                                 <rect key="frame" x="-2" y="595" width="75" height="16"/>
                                 <textFieldCell key="cell" lineBreakMode="clipping" title="White level:" id="blq-It-3DC">
@@ -1133,8 +1147,10 @@
                             <integer value="1000"/>
                             <integer value="1000"/>
                             <integer value="1000"/>
+                            <integer value="1000"/>
                         </visibilityPriorities>
                         <customSpacing>
+                            <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>
                             <real value="3.4028234663852886e+38"/>

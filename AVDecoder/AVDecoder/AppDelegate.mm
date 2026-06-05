@@ -57,6 +57,7 @@
 @property (strong) IBOutlet NSSlider *whiteLevelSlider;
 @property (strong) IBOutlet NSSlider *signalOffsetSlider;
 @property (strong) IBOutlet NSButton *colorArtifactFilterCheckbox;
+@property (strong) IBOutlet NSSegmentedControl *colorStandardSelector;
 
 @property (strong) IBOutlet NSSegmentedControl *colorModeSelector;
 @property (strong) IBOutlet NSSegmentedControl *levelsModeSelector;
@@ -568,6 +569,17 @@ void runLoopCallback(void *info){
 	Decoder::ColorDecoderSECAM *colorDecoder=dynamic_cast<Decoder::ColorDecoderSECAM*>(decoder->colorDecoder);
 	if(colorDecoder){
 		colorDecoder->colorArtifactFilterEnabled=_colorArtifactFilterCheckbox.state==NSControlStateValueOn;
+	}
+}
+
+- (IBAction)onColorStandardSelectorClick:(id)sender{
+	switch(_colorStandardSelector.selectedSegment){
+		case 0:
+			decoder->replaceColorDecoder(new Decoder::ColorDecoderSECAM());
+			break;
+		case 1:
+			decoder->replaceColorDecoder(new Decoder::ColorDecoderPAL());
+			break;
 	}
 }
 

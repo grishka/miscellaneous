@@ -47,12 +47,6 @@ public:
 class SignalBuffers: public BaseSignalBuffers{
 public:
 	SignalBuffers(){
-		int size=getBufferSize();
-		luminance=(float*)malloc(size*sizeof(float));
-		chrominance[0]=(float*)malloc(size*sizeof(float));
-		chrominance[1]=(float*)malloc(size*sizeof(float));
-		filteredLuminance=(float*)malloc(size*sizeof(float));
-		raw=(float*)malloc(size*sizeof(float));
 	}
 	
 	virtual ~SignalBuffers(){
@@ -61,6 +55,15 @@ public:
 		free(chrominance[1]);
 		free(filteredLuminance);
 		free(raw);
+	}
+	
+	void init(){
+		int size=getBufferSize();
+		luminance=(float*)malloc(size*sizeof(float));
+		chrominance[0]=(float*)malloc(size*sizeof(float));
+		chrominance[1]=(float*)malloc(size*sizeof(float));
+		filteredLuminance=(float*)malloc(size*sizeof(float));
+		raw=(float*)malloc(size*sizeof(float));
 	}
 	
 protected:
@@ -89,7 +92,7 @@ public:
 	}
 	
 protected:
-	int getBufferSize() override{
+	virtual int getBufferSize() override{
 		return MAX_LINE_DURATION*625;
 	}
 };
@@ -116,6 +119,7 @@ Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmap
 	currentOutputBuffer=outputBufferPool.Get();
 	mainThreadRunLoop=CFRunLoopGetMain();
 	interpolatedField=new VideoField();
+	interpolatedField->init();
 	for(int i=0;i<625;i++){
 		VideoLine line;
 		line.setFrom(interpolatedField, DEFAULT_LINE_DURATION*i);
@@ -160,11 +164,15 @@ void Decoder::runDecoderThread(){
 	vector<VideoLine> lineBuffer;
 	
 	SignalBuffers *b=new SignalBuffers();
+	b->init();
 	SignalBuffers *prevBuf=new SignalBuffers();
+	prevBuf->init();
 	SignalBuffers *nextBuf=new SignalBuffers();
+	nextBuf->init();
 	
 	for(int i=0;i<6;i++){
 		fieldPool.push_back(new VideoField());
+		fieldPool[i]->init();
 	}
 	
 	VideoField *currentField=fieldPool.front();
@@ -192,7 +200,8 @@ void Decoder::runDecoderThread(){
 		tgvoip::Buffer buf=newlyAcquiredDataBuffers.GetBlocking();
 		
 		//blockingSemaphore.Acquire();
-		
+		tgvoip::MutexGuard mutexGuard(colorDecoderMutex);
+
 		SignalBuffers *tmpB=prevBuf;
 		prevBuf=b;
 		b=nextBuf;
@@ -210,9 +219,7 @@ void Decoder::runDecoderThread(){
 		}
 		
 		float *subcarrier=colorDecoder->separateSubcarrier(samples, nextSamples);
-		for(int i=0;i<BUFFER_SIZE;i++){
-			nextBuf->luminance[i]=samples[i]-subcarrier[i];
-		}
+		memcpy(nextBuf->luminance, samples, BUFFER_SIZE*sizeof(float));
 		
 		syncLowpass.process(nextBuf->luminance, nextBuf->filteredLuminance, BUFFER_SIZE);
 		luminanceLowpass.process(nextBuf->luminance, nextBuf->luminance, BUFFER_SIZE);
@@ -340,6 +347,7 @@ void Decoder::runDecoderThread(){
 				bool nextIsBottom=phaseRelativeToLineSync>0.25f && phaseRelativeToLineSync<0.75f;
 				if(nextIsBottom)
 					fieldDuration-=DEFAULT_LINE_DURATION/2;
+				fieldDuration=std::min(MAX_LINE_DURATION*625, fieldDuration);
 				//printf("long pulse: %d samples (%f / %d lines) location %d last %d, %s field, add %d samples\n", fieldDuration, fieldDuration/(float)DEFAULT_LINE_DURATION, (int)roundf(fieldDuration/(float)DEFAULT_LINE_DURATION), loc, lastLongSyncPulseLocation, nextFieldIsBottom ? "bottom" : "top", lastLongSyncPulseLocation+fieldDuration);
 				
 				VideoField *nextField=fieldPool.front();
@@ -354,7 +362,8 @@ void Decoder::runDecoderThread(){
 				}else{
 					int offset=std::max(0, lastLongSyncPulseLocation);
 					int count=fieldDuration+std::min(lastLongSyncPulseLocation, 0);
-					currentField->appendSamples(b, offset, count);
+					int maxCount=(MAX_LINE_DURATION*625)-currentField->numSamples;
+					currentField->appendSamples(b, offset, std::min(count, maxCount));
 				}
 				assert(currentField->numSamples==fieldDuration);
 				for(int j=10;j<i;j++){
@@ -857,7 +866,13 @@ void Decoder::stopOutput(){
 	outputQueue.Put(tgvoip::Buffer(0));
 }
 
-#pragma mark - Color decoder
+void Decoder::replaceColorDecoder(ColorDecoder *newColorDecoder){
+	tgvoip::MutexGuard mutexGuard(colorDecoderMutex);
+	delete colorDecoder;
+	colorDecoder=newColorDecoder;
+}
+
+#pragma mark - SECAM color decoder
 
 /*
 
@@ -943,6 +958,9 @@ float *Decoder::ColorDecoderSECAM::separateSubcarrier(float *rawSignal, float *n
 	memcpy(samples+filterDelay+BUFFER_SIZE, nextBuffer, filterDelay*sizeof(float));
 	memcpy(samples+filterDelay, rawSignal, BUFFER_SIZE*sizeof(float));
 	chromaSeparationFilter.process(samples, subcarrier, BUFFER_SIZE+filterDelay);
+	for(int i=0;i<BUFFER_SIZE;i++){
+		rawSignal[i]-=subcarrier[i];
+	}
 	return subcarrier;
 }
 
@@ -1029,5 +1047,138 @@ void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
 	if(colorArtifactFilterEnabled){
 		memcpy(prevFieldChrominance[0], field->chrominance[0], DEFAULT_LINE_DURATION*313*sizeof(float));
 		memcpy(prevFieldChrominance[1], field->chrominance[1], DEFAULT_LINE_DURATION*313*sizeof(float));
+	}
+}
+
+#pragma mark - PAL color decoder
+
+Decoder::ColorDecoderPAL::ColorDecoderPAL():chromaSeparationFilter({
+	-0.000355332559186389, -0.000065182747038352, -0.000000167132156195, -0.000138060828243159, 0.000289476246564488, 0.000639179567802343, -0.000338823476819809, -0.001363918764952078, -0.000042978323621183,
+	0.002056511184129074, 0.000907874229430065, -0.002324821795973919, -0.001990981191923742, 0.001874599015146832, 0.002694272818096073, -0.000831120050149311, -0.002357736673255510, -0.000095826433805184,
+	0.000744725138274713, -0.000168252776439729, 0.001552124041453941, 0.002446365469462258, -0.003143641968912556, -0.006595805757775201, 0.002481984815213216, 0.011187214344971308, 0.001116644379638256,
+	-0.013963762534680882, -0.006640019423288224, 0.013053191365164441, 0.011377527759556553, -0.008384500720121127, -0.012035368915283264, 0.002457352583170530, 0.006621073669846994, 0.000222145987583085,
+	0.003828474365526305, 0.004910326957695284, -0.014744615811586424, -0.019905315370642291, 0.019353372259879129, 0.042393445534147450, -0.011525509563349986, -0.065522166616884481, -0.011050575073590677,
+	0.080122664319102699, 0.044945191543788926, -0.078378374218889366, -0.081458277334551979, 0.057398039205471235, 0.109551087048940413, -0.020914062849548387, 0.880220670125227089, -0.020914062849548387,
+	0.109551087048940413, 0.057398039205471242, -0.081458277334551979, -0.078378374218889366, 0.044945191543788926, 0.080122664319102699, -0.011050575073590680, -0.065522166616884481, -0.011525509563349988,
+	0.042393445534147450, 0.019353372259879129, -0.019905315370642294, -0.014744615811586424, 0.004910326957695284, 0.003828474365526305, 0.000222145987583086, 0.006621073669846995, 0.002457352583170530,
+	-0.012035368915283267, -0.008384500720121132, 0.011377527759556555, 0.013053191365164443, -0.006640019423288228, -0.013963762534680882, 0.001116644379638256, 0.011187214344971302, 0.002481984815213215,
+	-0.006595805757775202, -0.003143641968912558, 0.002446365469462258, 0.001552124041453941, -0.000168252776439729, 0.000744725138274713, -0.000095826433805184, -0.002357736673255513, -0.000831120050149311,
+	0.002694272818096074, 0.001874599015146832, -0.001990981191923744, -0.002324821795973923, 0.000907874229430065, 0.002056511184129075, -0.000042978323621183, -0.001363918764952078, -0.000338823476819810,
+	0.000639179567802343, 0.000289476246564488, -0.000138060828243159, -0.000000167132156195, -0.000065182747038352, -0.000355332559186389,
+}),
+phaseLowpassFilter(-1.58008635, 0.65408288, 0.05594167, 0.00824198, 0.00981288),
+phaseLowpassFilter2(-1.58008635, 0.65408288, 0.05594167, 0.00824198, 0.00981288){
+	const int filterSize=chromaSeparationFilter.getSize();
+	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
+	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
+	prevRawSignal=(float*)calloc(DEFAULT_LINE_DURATION*2, sizeof(float));
+	for(int i=0;i<2048;i++){
+		float angle=M_PI*2/2048.0f*i;
+		sinLUT[i]=sin(angle);
+		cosLUT[i]=cos(angle);
+	}
+}
+
+Decoder::ColorDecoderPAL::~ColorDecoderPAL(){
+	free(samples);
+	free(subcarrier);
+	free(prevRawSignal);
+}
+
+float *Decoder::ColorDecoderPAL::separateSubcarrier(float *rawSignal, float *nextBuffer){
+	const int filterSize=chromaSeparationFilter.getSize();
+	const int filterDelay=chromaSeparationFilter.getDelay();
+	memcpy(samples, samples+BUFFER_SIZE, filterSize*sizeof(float));
+	memcpy(samples+filterDelay+BUFFER_SIZE, nextBuffer, filterDelay*sizeof(float));
+	for(int i=0;i<DEFAULT_LINE_DURATION*2;i++){
+		samples[i+filterDelay]=(rawSignal[i]*2-rawSignal[i+DEFAULT_LINE_DURATION*2]-prevRawSignal[i])/4.0f;
+	}
+	memcpy(prevRawSignal, rawSignal+BUFFER_SIZE-DEFAULT_LINE_DURATION*2, DEFAULT_LINE_DURATION*2*sizeof(float));
+	for(int i=DEFAULT_LINE_DURATION*2;i<BUFFER_SIZE-DEFAULT_LINE_DURATION*2;i++){
+		samples[i+filterDelay]=(rawSignal[i]*2-rawSignal[i+DEFAULT_LINE_DURATION*2]-rawSignal[i-DEFAULT_LINE_DURATION*2])/4.0f;
+	}
+	for(int i=BUFFER_SIZE-DEFAULT_LINE_DURATION*2;i<BUFFER_SIZE;i++){
+		samples[i+filterDelay]=(rawSignal[i]*2-nextBuffer[i+DEFAULT_LINE_DURATION*2-BUFFER_SIZE]-rawSignal[i-DEFAULT_LINE_DURATION*2])/4.0f;
+	}
+	chromaSeparationFilter.process(samples, subcarrier, BUFFER_SIZE+filterDelay);
+	for(int i=0;i<BUFFER_SIZE;i++){
+		rawSignal[i]-=samples[i+filterDelay]-subcarrier[i];
+		subcarrier[i]=samples[i+filterDelay];
+	}
+
+	return subcarrier;
+}
+
+void Decoder::ColorDecoderPAL::demodulateSubcarrier(float *samples, SignalBuffers *buf){
+	double samplesPerPeriod=20000000.0/4433618.75;
+	for(int i=0;i<BUFFER_SIZE;i++){
+		float angle=(1.0/samplesPerPeriod)*sampleCount*2048;
+		int lutIndex=(int)angle%2048;
+		buf->chrominance[0][i]=samples[i]*sinLUT[lutIndex];
+		buf->chrominance[1][i]=samples[i]*cosLUT[lutIndex];
+
+		sampleCount++;
+	}
+	sampleCount%=2500*DEFAULT_LINE_DURATION;
+	phaseLowpassFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
+	phaseLowpassFilter2.process(buf->chrominance[1], buf->chrominance[1], BUFFER_SIZE);
+	
+	for(int i=0;i<BUFFER_SIZE;i++){
+		float inphase=buf->chrominance[0][i];
+		float quadrature=buf->chrominance[1][i];
+		float phase=atan2f(quadrature, inphase);
+		float amplitude=hypotf(inphase, quadrature);
+		buf->chrominance[0][i]=phase;
+		buf->chrominance[1][i]=amplitude;
+	}
+}
+
+void Decoder::ColorDecoderPAL::decodeColor(VideoField *field){
+	float prevLineBurstPhase=0;
+	//bool prevLineWasOdd=false;
+	for(int i=0;i<(field->isBottom ? 313 : 312);i++){
+		VideoLine &line=field->lines[i];
+		float burstPhase=0, burstAmplitude=0;
+		float minPhase=M_PI, maxPhase=-M_PI;
+		for(int j=115;j<156;j++){
+			minPhase=std::min(line.chrominance[0][j], minPhase);
+			maxPhase=std::max(line.chrominance[0][j], maxPhase);
+		}
+		float phaseOffset=0;
+		if(maxPhase-minPhase>2){
+			phaseOffset=M_PI;
+		}
+		for(int j=115;j<156;j++){
+			float phase=line.chrominance[0][j]+phaseOffset;
+			if(phase>M_PI)
+				phase-=M_PI*2;
+			burstPhase+=phase;
+			burstAmplitude+=line.chrominance[1][j];
+		}
+		burstPhase/=41;
+		burstAmplitude/=41;
+		burstPhase-=phaseOffset;
+		if(burstAmplitude<0.005f){
+			memset(line.chrominance[0], 0, DEFAULT_LINE_DURATION*sizeof(float));
+			memset(line.chrominance[1], 0, DEFAULT_LINE_DURATION*sizeof(float));
+			continue;
+		}
+		bool isOddLine=(burstPhase>prevLineBurstPhase && burstPhase-prevLineBurstPhase<M_PI*0.75f) || (prevLineBurstPhase>M_PI*0.25f && burstPhase<-M_PI*0.75f) || (prevLineBurstPhase>M_PI*0.25f && burstPhase<-M_PI*0.25f);
+		//if(prevLineWasOdd==isOddLine)
+		//	printf("%d %d %f -> %f; ", i, isOddLine, prevLineBurstPhase, burstPhase);
+		//prevLineWasOdd=isOddLine;
+		float amplitudeScale=1.0f/(burstAmplitude*7.0f);
+		float vScale=isOddLine ? -1 : 1;
+		float uOffset=(isOddLine ? 1.25f : 0.75f)*M_PI;
+		//printf("line %d %d %f; ", i, isOddLine, burstPhase);
+		for(int j=0;j<DEFAULT_LINE_DURATION;j++){
+			float newPhase=line.chrominance[0][j]-burstPhase+uOffset;
+			float amplitude=line.chrominance[1][j]*amplitudeScale;
+			// U / D'b
+			line.chrominance[0][j]=std::clamp(cos(newPhase)*amplitude/0.493f, -1.0f, 1.0f);
+			// V / D'r
+			line.chrominance[1][j]=std::clamp(sin(newPhase)*amplitude*vScale/0.877f, -1.0f, 1.0f);
+		}
+		prevLineBurstPhase=burstPhase;
 	}
 }
