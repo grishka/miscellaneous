@@ -2,7 +2,7 @@
 
 This is a software-defined analog (composite) video decoder aka "why would you buy a capture card if you can build one". It takes a digitized video signal from an ADC, decodes it, and displays it on the screen. It also supports recording and replaying raw signals, as well as recording video files.
 
-Only SECAM is supported (for now?).
+SECAM and PAL are supported.
 
 ## Video samples
 
@@ -168,9 +168,3 @@ brew install flac
 Then open `AVDecoder.xcworkspace` in Xcode, build the app and run it.
 
 The UI is pretty self-explanatory. If you're seeing a distorted picture, adjust the "signal offset". Recordings you make are saved to `~/Movies/AVDecoder`.
-
-## What happens if you put a PAL signal into it?
-
-Here's PAL Durov to satisfy your curiosity:
-
-![](images/PAL.jpg)
