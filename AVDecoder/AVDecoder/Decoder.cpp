@@ -661,6 +661,8 @@ vector<VideoLine> Decoder::processField(VideoField *field, std::vector<SyncPulse
 		}
 		
 		interpolatedField->isBottom=field->isBottom;
+		interpolatedField->blackLevel=field->blackLevel;
+		interpolatedField->syncLevel=field->syncLevel;
 		colorDecoder->decodeColor(interpolatedField);
 		
 		for(int j=0;j<field->lines.size();j++){
@@ -938,8 +940,8 @@ hilbertTransform(19){
 	const int filterSize=chromaSeparationFilter.getSize();
 	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
 	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
-	prevFieldChrominance[0]=(float*)calloc(DEFAULT_LINE_DURATION*313, sizeof(float));
-	prevFieldChrominance[1]=(float*)calloc(DEFAULT_LINE_DURATION*313, sizeof(float));
+	prevFieldChrominance[0]=(float*)calloc(DEFAULT_LINE_DURATION*625, sizeof(float));
+	prevFieldChrominance[1]=(float*)calloc(DEFAULT_LINE_DURATION*625, sizeof(float));
 }
 
 Decoder::ColorDecoderSECAM::~ColorDecoderSECAM(){
@@ -984,7 +986,37 @@ void Decoder::ColorDecoderSECAM::demodulateSubcarrier(float *samples, SignalBuff
 }
 
 void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
-	float subcarrierAmplitudeThreshold=0.025f;
+	float subcarrierAmplitudeThreshold=(field->blackLevel-field->syncLevel)/0.43f*0.07f;
+	int wrongLineCount=0;
+	for(int i=(field->isBottom ? 7 : 6);i<(field->isBottom ? 15 : 16);i++){
+		VideoLine &line=field->lines[i];
+		int lineIndex=i+(field->isBottom ? 312 : 0);
+		bool isRedLine=(lineIndex+colorLineOffset)%2==0;
+		float centerSum=0;
+		float min=10;
+		float max=-10;
+		for(int j=150;j<250;j++){
+			centerSum+=line.chrominance[0][j];
+			min=std::min(line.chrominance[0][j], min);
+			max=std::max(line.chrominance[0][j], max);
+		}
+		float centerFreq=centerSum/100.0;
+		float maxSum=0;
+		for(int j=1000;j<1200;j++){
+			maxSum+=line.chrominance[0][j];
+		}
+		float maxFreq=maxSum/200.0;
+		float freqDiff=centerFreq-maxFreq;
+		if(centerFreq>3500000 && centerFreq<4500000 && fabsf(freqDiff)>270000.0f){
+			bool isActuallyRedLine=maxFreq>centerFreq;
+			if(isActuallyRedLine!=isRedLine){
+				wrongLineCount++;
+			}
+		}
+	}
+	if(wrongLineCount>=2){
+		colorLineOffset=colorLineOffset==1 ? 0 : 1;
+	}
 	for(int i=0;i<(field->isBottom ? 313 : 312);i++){
 		int lineIndex=i+(field->isBottom ? 312 : 0);
 		
@@ -1019,16 +1051,20 @@ void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
 		int chrominanceIndex=isRedLine ? 1 : 0;
 		int prevLineChrominanceIndex=isRedLine ? 0 : 1;
 		float coeff=isRedLine ? -1.902f : 1.505f;
-		//coeff*=1.3f; // Colors are over-saturated if I don't do this
 		if(colorArtifactFilterEnabled){
 			int remainingBadChromaSamples=0;
 			for(int j=0;j<DEFAULT_LINE_DURATION;j++){
 				if(line.chrominance[1][j]<subcarrierAmplitudeThreshold && j>=197 && j<DEFAULT_LINE_DURATION-40 && i>=22 && i<310){
-					line.chrominance[chrominanceIndex][j]=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*i+j];
+					float fromPrevField=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*(lineIndex+(frameCount%2==1 ? 0 : 1))+j];
+					float fromPrevLine=field->lines[i-1].chrominance[chrominanceIndex][j];
+					line.chrominance[chrominanceIndex][j]=(fromPrevField+fromPrevLine)/2.0f;
 					remainingBadChromaSamples=50;
 				}else if(remainingBadChromaSamples>0){
 					remainingBadChromaSamples--;
-					line.chrominance[chrominanceIndex][j]=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*i+j];
+					//line.chrominance[chrominanceIndex][j]=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*(lineIndex+(frameCount%2==1 ? 0 : 1))+j];
+					float fromPrevField=prevFieldChrominance[chrominanceIndex][DEFAULT_LINE_DURATION*(lineIndex+(frameCount%2==1 ? 0 : 1))+j];
+					float fromPrevLine=field->lines[i-1].chrominance[chrominanceIndex][j];
+					line.chrominance[chrominanceIndex][j]=(fromPrevField+fromPrevLine)/2.0f;
 				}else{
 					line.chrominance[chrominanceIndex][j]=std::clamp((line.chrominance[0][j]-centerFreq)/maxDeviation/coeff, -1.0f, 1.0f);
 				}
@@ -1043,8 +1079,14 @@ void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
 		}
 	}
 	if(colorArtifactFilterEnabled){
-		memcpy(prevFieldChrominance[0], field->chrominance[0], DEFAULT_LINE_DURATION*313*sizeof(float));
-		memcpy(prevFieldChrominance[1], field->chrominance[1], DEFAULT_LINE_DURATION*313*sizeof(float));
+		int lineCount=field->isBottom ? 313 : 312;
+		int offset=field->isBottom ? 312 : 0;
+		memcpy(prevFieldChrominance[0]+offset*DEFAULT_LINE_DURATION, field->chrominance[0], DEFAULT_LINE_DURATION*lineCount*sizeof(float));
+		memcpy(prevFieldChrominance[1]+offset*DEFAULT_LINE_DURATION, field->chrominance[1], DEFAULT_LINE_DURATION*lineCount*sizeof(float));
+	}
+	if(field->isBottom){
+		frameCount++;
+		colorLineOffset=colorLineOffset==1 ? 0 : 1;
 	}
 }
 

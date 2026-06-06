@@ -100,6 +100,7 @@ public:
 		float *subcarrier;
 		float *prevFieldChrominance[2];
 		HilbertTransform hilbertTransform;
+		unsigned int frameCount=0;
 		
 		static constexpr float redCenterFreq=4406000;
 		static constexpr float blueCenterFreq=4250000;
