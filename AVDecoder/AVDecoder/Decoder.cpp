@@ -776,9 +776,12 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			float dr1=crSamples[(int)sampleIndex], dr2=crSamples[(int)sampleIndex+1];
 			float dr=dr2*k+dr1*(1.0f-k);
 			
-			float r=std::clamp(y+1.403f*dr, 0.0f, 1.0f);
-			float g=std::clamp(y-0.344f*db-0.714f*dr, 0.0f, 1.0f);
-			float b=std::clamp(y+1.770f*db, 0.0f, 1.0f);
+			// http://avisynth.nl/index.php/Colorimetry
+			const float kr=0.299, kg=0.587, kb=0.114;
+			
+			float r=std::clamp(y+dr*(1.0f-kr), 0.0f, 1.0f);
+			float g=std::clamp(y-db*(1.0f-kb)*kb/kg-dr*(1.0f-kr)*kr/kg, 0.0f, 1.0f);
+			float b=std::clamp(y+db*(1.0f-kb), 0.0f, 1.0f);
 
 			int ri=std::round(r*255);
 			int gi=std::round(g*255);
@@ -821,8 +824,9 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 			yOffset=44;
 		}
 		int y=lineIndex*2%625-yOffset;
-		if(y>=0){
-			uint32_t *outputLine=((uint32_t*)*currentOutputBuffer)+(y*outputWidth);
+		if(y>=0 && y<outputHeight){
+			uint16_t *outputLineY=((uint16_t*)*currentOutputBuffer)+y*outputWidth;
+			uint16_t *outputLineUV=((uint16_t*)*currentOutputBuffer)+outputWidth*outputHeight+y*outputWidth*2;
 			for(int x=0;x<outputWidth;x++){
 				float sampleIndex=std::clamp(x/(float)outputWidth*lineLength, 0.0f, (float)lineLength-2)+lineStartOffset;
 				float sample1=line.luminance[((int)sampleIndex)];
@@ -835,14 +839,9 @@ void Decoder::processLine(VideoLine line, int lineIndex, float syncLevel, float 
 				float dr1=crSamples[(int)sampleIndex], dr2=crSamples[(int)sampleIndex+1];
 				float dr=dr2*k+dr1*(1.0f-k);
 				
-				float r=std::clamp(y+1.403f*dr, 0.0f, 1.0f);
-				float g=std::clamp(y-0.344f*db-0.714f*dr, 0.0f, 1.0f);
-				float b=std::clamp(y+1.770f*db, 0.0f, 1.0f);
-
-				int ri=std::round(r*255);
-				int gi=std::round(g*255);
-				int bi=std::round(b*255);
-				outputLine[x]=bi | (gi << 8) | (ri << 16) | 0xff000000;
+				outputLineY[x]=(int)(std::clamp(y, 0.0f, 1.0f)*65535);
+				outputLineUV[x*2]=(int)(std::clamp((db+1)/2, 0.0f, 1.0f)*65535);
+				outputLineUV[x*2+1]=(int)(std::clamp((dr+1)/2, 0.0f, 1.0f)*65535);
 			}
 		}
 	}
@@ -1021,7 +1020,7 @@ void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
 		int chrominanceIndex=isRedLine ? 1 : 0;
 		int prevLineChrominanceIndex=isRedLine ? 0 : 1;
 		float coeff=isRedLine ? -1.902f : 1.505f;
-		coeff*=1.3f; // Colors are over-saturated if I don't do this
+		//coeff*=1.3f; // Colors are over-saturated if I don't do this
 		if(colorArtifactFilterEnabled){
 			int remainingBadChromaSamples=0;
 			for(int j=0;j<DEFAULT_LINE_DURATION;j++){
@@ -1167,7 +1166,7 @@ void Decoder::ColorDecoderPAL::decodeColor(VideoField *field){
 		//if(prevLineWasOdd==isOddLine)
 		//	printf("%d %d %f -> %f; ", i, isOddLine, prevLineBurstPhase, burstPhase);
 		//prevLineWasOdd=isOddLine;
-		float amplitudeScale=1.0f/(burstAmplitude*7.0f);
+		float amplitudeScale=1.0f/(burstAmplitude*3.5f);
 		float vScale=isOddLine ? -1 : 1;
 		float uOffset=(isOddLine ? 1.25f : 0.75f)*M_PI;
 		//printf("line %d %d %f; ", i, isOddLine, burstPhase);

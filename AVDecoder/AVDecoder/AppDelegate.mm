@@ -204,7 +204,7 @@ void runLoopCallback(void *info){
 	AVAssetWriterInputPixelBufferAdaptor *inputAdaptor=[AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:videoWriterInput sourcePixelBufferAttributes:@{
 		(NSString*)kCVPixelBufferWidthKey: @(videoWidth),
 		(NSString*)kCVPixelBufferHeightKey: @(videoHeight),
-		(NSString*)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA)
+		(NSString*)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_444YpCbCr10BiPlanarFullRange)
 	}];
 	videoWriterInput.expectsMediaDataInRealTime=true;
 	[assetWriter addInput:videoWriterInput];
@@ -255,11 +255,14 @@ void runLoopCallback(void *info){
 		CVPixelBufferRef pixelBuffer;
 		CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, inputAdaptor.pixelBufferPool, &pixelBuffer);
 		CVPixelBufferLockBaseAddress(pixelBuffer, 0);
-		void *bufferAddr=CVPixelBufferGetBaseAddress(pixelBuffer);
-		assert(bufferAddr);
-		size_t stride=CVPixelBufferGetBytesPerRow(pixelBuffer);
+		void *lumaBufferAddr=CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 0);
+		void *chromaBufferAddr=CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, 1);
+		assert(lumaBufferAddr && chromaBufferAddr);
+		size_t lumaStride=CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 0);
+		size_t chromaStride=CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, 1);
 		for(int y=0;y<videoHeight;y++){
-			memcpy(((uint8_t*)bufferAddr)+stride*y, *frame+videoWidth*4*y, videoWidth*4);
+			memcpy((uint8_t*)lumaBufferAddr+lumaStride*y, *frame+videoWidth*2*y, videoWidth*2);
+			memcpy((uint8_t*)chromaBufferAddr+chromaStride*y, *frame+videoWidth*videoHeight*2+videoWidth*4*y, videoWidth*4);
 		}
 		CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
 		[inputAdaptor appendPixelBuffer:pixelBuffer withPresentationTime:CMTimeAdd(CMTimeMake(-5, 25), CMClockGetTime(session.masterClock))];

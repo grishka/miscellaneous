@@ -139,7 +139,7 @@ private:
 	tgvoip::BlockingQueue<tgvoip::Buffer> newlyAcquiredDataBuffers=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::BufferPool<BUFFER_SIZE, 10> bufferPool;
 	tgvoip::Semaphore blockingSemaphore=tgvoip::Semaphore(1, 1);
-	tgvoip::BufferPool<942*625*4, 10> outputBufferPool;
+	tgvoip::BufferPool<942*625*2*3, 10> outputBufferPool;
 	tgvoip::BlockingQueue<tgvoip::Buffer> outputQueue=tgvoip::BlockingQueue<tgvoip::Buffer>(10);
 	tgvoip::Buffer currentOutputBuffer=tgvoip::Buffer(0);
 	tgvoip::Mutex colorDecoderMutex;

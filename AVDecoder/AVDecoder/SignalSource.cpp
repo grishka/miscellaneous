@@ -152,7 +152,8 @@ void FileSignalSource::runThread(){
 			double usSinceLastCallback=(now-s->prevCallbackEndTime)/1000.0;
 			int usToSleep=floor(BUFFER_SIZE/20.0-usSinceLastCallback);
 			s->prevCallbackEndTime=now+(BUFFER_SIZE/20.0-usSinceLastCallback)*1000;
-			usleep(usToSleep);
+			if(usToSleep>0)
+				usleep(usToSleep);
 			//printf("avg semple rate: %f\n", s->totalSamples/((double)(now-s->startTime)/1000000000.0));
 		}
 		return s->running ? FLAC__STREAM_DECODER_WRITE_STATUS_CONTINUE : FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
