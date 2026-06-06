@@ -95,6 +95,7 @@ public:
 	private:
 		FIRFilter chromaSeparationFilter;
 		BiquadFilter chromaDeemphasisFilter;
+		BiquadFilter chromaLowpassFilter;
 		float *samples;
 		float *subcarrier;
 		float *prevFieldChrominance[2];
@@ -118,6 +119,8 @@ public:
 		FIRFilter chromaSeparationFilter;
 		BiquadFilter phaseLowpassFilter;
 		BiquadFilter phaseLowpassFilter2;
+		BiquadFilter chromaLowpassFilter;
+		BiquadFilter chromaLowpassFilter2;
 		float *samples;
 		float *subcarrier;
 		float *prevRawSignal;
@@ -159,8 +162,6 @@ private:
 	float nextSyncLevel=0;
 	float detectedWhiteLevel=0;
 	int fieldsWithoutVITS=10;
-	
-	BiquadFilter *chromaLowpassFilter;
 
 	int frameCount=0;
 	uint64_t lastFrameTime;

@@ -110,8 +110,6 @@ public:
 	}
 };
 
-BiquadFilter chromaLowpass(-1.3698978138079605, 0.5254518355382106, 0.038888505432562503, 0.07777701086512501, 0.038888505432562503);
-
 Decoder::Decoder(void* bitmapData, unsigned int bitmapWidth, unsigned int bitmapHeight, unsigned int bitmapStride, CFRunLoopSourceRef runLoopSource) :bitmapData(bitmapData), bitmapWidth(bitmapWidth), bitmapHeight(bitmapHeight), bitmapStride(bitmapStride/4), decoderThread(std::bind(&Decoder::runDecoderThread, this)), runLoopSource(runLoopSource){
 	
 	colorDecoder=new ColorDecoderSECAM();
@@ -934,8 +932,9 @@ Decoder::ColorDecoderSECAM::ColorDecoderSECAM():chromaSeparationFilter({
 	0.0013884642183898805, 0.0008405260756064897, -0.00011778529621897669, -0.002225020994475672, 0.0009271257887485181, 0.0009462714034337175, 0.001248882032462522, -0.002720364468382116, 0.0001466177509746152,
 	0.00023006401209703413, 0.0032688460425483986, -0.003176139586031761, -0.0016534033029806199, 0.003950611398639031, -0.0018962302677754082
 }),
-	chromaDeemphasisFilter(-0.973646758810919, 0, 0.01317662059454045, 0.01317662059454045, 0),
-	hilbertTransform(19){
+chromaDeemphasisFilter(-0.973646758810919, 0, 0.01317662059454045, 0.01317662059454045, 0),
+chromaLowpassFilter(-1.3698978138079605, 0.5254518355382106, 0.038888505432562503, 0.07777701086512501, 0.038888505432562503),
+hilbertTransform(19){
 	const int filterSize=chromaSeparationFilter.getSize();
 	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
 	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
@@ -981,7 +980,7 @@ void Decoder::ColorDecoderSECAM::demodulateSubcarrier(float *samples, SignalBuff
 		buf->chrominance[1][i]=hypotf(a, -b);
 	}
 	chromaDeemphasisFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
-	chromaLowpass.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
+	chromaLowpassFilter.process(buf->chrominance[0], buf->chrominance[0], BUFFER_SIZE);
 }
 
 void Decoder::ColorDecoderSECAM::decodeColor(VideoField *field){
@@ -1066,7 +1065,9 @@ Decoder::ColorDecoderPAL::ColorDecoderPAL():chromaSeparationFilter({
 	0.000639179567802343, 0.000289476246564488, -0.000138060828243159, -0.000000167132156195, -0.000065182747038352, -0.000355332559186389,
 }),
 phaseLowpassFilter(-1.58008635, 0.65408288, 0.05594167, 0.00824198, 0.00981288),
-phaseLowpassFilter2(-1.58008635, 0.65408288, 0.05594167, 0.00824198, 0.00981288){
+phaseLowpassFilter2(-1.58008635, 0.65408288, 0.05594167, 0.00824198, 0.00981288),
+chromaLowpassFilter(-1.3698978138079605, 0.5254518355382106, 0.038888505432562503, 0.07777701086512501, 0.038888505432562503),
+chromaLowpassFilter2(-1.3698978138079605, 0.5254518355382106, 0.038888505432562503, 0.07777701086512501, 0.038888505432562503){
 	const int filterSize=chromaSeparationFilter.getSize();
 	samples=(float*)calloc(BUFFER_SIZE+filterSize*2, sizeof(float));
 	subcarrier=(float*)calloc(BUFFER_SIZE+filterSize, sizeof(float));
@@ -1171,13 +1172,24 @@ void Decoder::ColorDecoderPAL::decodeColor(VideoField *field){
 		float uOffset=(isOddLine ? 1.25f : 0.75f)*M_PI;
 		//printf("line %d %d %f; ", i, isOddLine, burstPhase);
 		for(int j=0;j<DEFAULT_LINE_DURATION;j++){
-			float newPhase=line.chrominance[0][j]-burstPhase+uOffset;
+			float phase=line.chrominance[0][j];
+			float newPhase=phase-burstPhase+uOffset;
 			float amplitude=line.chrominance[1][j]*amplitudeScale;
+			int lutIndex=(int)((newPhase+M_PI*4)/(M_PI*2)*2048)%2048;
 			// U / D'b
-			line.chrominance[0][j]=std::clamp(cos(newPhase)*amplitude/0.493f, -1.0f, 1.0f);
+			line.chrominance[0][j]=std::clamp(cosLUT[lutIndex]*amplitude/0.493f, -1.0f, 1.0f);
 			// V / D'r
-			line.chrominance[1][j]=std::clamp(sin(newPhase)*amplitude*vScale/0.877f, -1.0f, 1.0f);
+			line.chrominance[1][j]=std::clamp(sinLUT[lutIndex]*amplitude*vScale/0.877f, -1.0f, 1.0f);
+		}
+		if(i>0){
+			VideoLine &prevLine=field->lines[i-1];
+			for(int j=0;j<DEFAULT_LINE_DURATION;j++){
+				line.chrominance[0][j]=(line.chrominance[0][j]+prevLine.chrominance[0][j])/2.0f;
+				line.chrominance[1][j]=(line.chrominance[1][j]+prevLine.chrominance[1][j])/2.0f;
+			}
 		}
 		prevLineBurstPhase=burstPhase;
 	}
+	chromaLowpassFilter.process(field->chrominance[0], field->chrominance[0], DEFAULT_LINE_DURATION*313);
+	chromaLowpassFilter2.process(field->chrominance[1], field->chrominance[1], DEFAULT_LINE_DURATION*313);
 }
